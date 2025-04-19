@@ -1,28 +1,22 @@
-# Shocovox - Shady Octree Of Voxels with Ray Marching
-Shocovox is a Sparse Voxel Octree implementation in WGPU shaders ( hence: shady ).
-The leaf nodes contain 8 Voxel bricks instead of a single Voxel. This makes it possible to have a unique compression system, where Voxels of different resolutions can be mixed together.
+# VoxelHex(v0x7H3X) 
+A Sparse voxel-brick tree implementation in Rust/WGPU.
+The leaf nodes of the tree contain voxel bricks instead of a single Voxel. This makes it possible to have a unique compression system, where Voxels of different resolutions can be mixed together.
 An implementation for raytracing is available with GPU support!
 The library uses Left handed Y up coordinate system.
 
+Videos I made about the tech: 
+https://www.youtube.com/watch?v=pVmUQUhrfjg&list=PL_3Xjx_NV4tw6vhcij03fZFTpt0eaO_-b
+
 Roadmap:
--
-- Implementing Caching to request data on demand to handle large data: https://github.com/davids91/shocovox/milestone/3
-- Displaying large data as a panorama: https://github.com/davids91/shocovox/milestone/1
-- Finalising "Octree of Voxel Bricks" concept: https://github.com/davids91/shocovox/milestone/2
+- Shadows, Lighting, Illumination: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/milestone/2
+- Data Compression, Load time minimizations: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/milestone/3
+- Displaying Vast Voxel landscapes: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/milestone/1
 
 Issue spotlight: 
--
-These are the issues I will work on until 2025 Q2. I am eliminating them in a sequential manner.
-- #56 - Introduce Palettes - Trimming the fat in Voxel storage, broadening the possibilities with user data and eliminating some data conversion overhead with bricks.
-- #65 - Flatten brick storage: trimming some additional overhead, and eliminating some possible techDebt (`DIM` generic argument with Octree)
-- #3 - to make it possible to have a limitless octree: so it's not bound by the RAM size anymore
-- #17 Beam Optimization - Pre-render a small resolution image to optimally initialize ray distances, and help with deciding which bricks to load pre-emptively. GOTTA GO FAST
-- #28, #6 - Level of Detail implementation to render large scenes more efficiently
-
-If you feel adventurous:
--
-
-I have marked some issues with the help needed flag, which I think would be a good addition to the library, but I can not focus on it as I am but a single person with limited time and resources. Feel free to try to tackle any of the marked issues (Or basically anything you'd like), I will provide any needed help and support if I can. 
+- Performance upgrade: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/issues/10
+- Examples Quality of Life Updates: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/issues/9
+- Improved normal handling: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/issues/11
+- Performance improvement (allegedly) : https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/issues/13
 
 Special thanks to contributors and supporters!
 -
