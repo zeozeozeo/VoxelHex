@@ -1,5 +1,5 @@
 use crate::{
-    octree::types::PaletteIndexValues,
+    boxtree::types::PaletteIndexValues,
     raytracing::bevy::types::{
         OctreeGPUView, OctreeMetaData, SvxRenderNode, SvxRenderPipeline, Viewport,
     },
@@ -438,7 +438,7 @@ fn create_view_resources(
     });
 
     let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-    buffer.write(&render_data.octree_meta).unwrap();
+    buffer.write(&render_data.boxtree_meta).unwrap();
     let boxtree_meta_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Tree Metadata Buffer"),
         contents: &buffer.into_inner(),
@@ -486,7 +486,7 @@ fn create_view_resources(
     });
 
     // One element in the brick metadata holds 16 bricks. See @OctreeRenderData
-    let brick_size = (render_data.octree_meta.tree_properties & 0x0000FFFF).pow(3);
+    let brick_size = (render_data.boxtree_meta.tree_properties & 0x0000FFFF).pow(3);
     let brick_element_count = (render_data.used_bits.len() * 31 * brick_size as usize) as u64;
     let one_voxel_byte_size = std::mem::size_of::<PaletteIndexValues>() as u64;
     let voxels_buffer = render_device.create_buffer(&BufferDescriptor {
@@ -649,7 +649,7 @@ pub(crate) fn prepare_bind_groups(
         let render_data = &tree_view.data_handler.render_data;
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-        buffer.write(&render_data.octree_meta).unwrap();
+        buffer.write(&render_data.boxtree_meta).unwrap();
         pipeline
             .render_queue
             .write_buffer(&resources.boxtree_meta_buffer, 0, &buffer.into_inner());

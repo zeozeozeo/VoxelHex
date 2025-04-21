@@ -12,8 +12,8 @@ use iyes_perf_ui::{
 };
 
 #[cfg(feature = "bevy_wgpu")]
-use shocovox_rs::{
-    octree::{Albedo, BoxTree, BoxTreeEntry, V3c, V3cf32},
+use voxelhex::{
+    boxtree::{Albedo, BoxTree, BoxTreeEntry, V3c, V3cf32},
     raytracing::{OctreeGPUHost, Ray, SvxViewSet, Viewport},
 };
 
@@ -24,7 +24,7 @@ const DISPLAY_RESOLUTION: [u32; 2] = [1024, 768];
 const BRICK_DIMENSION: u32 = 32;
 
 #[cfg(feature = "bevy_wgpu")]
-const TREE_SIZE: u32 = 256;
+const TREE_SIZE: u32 = 128;
 
 #[cfg(feature = "bevy_wgpu")]
 fn main() {
@@ -32,7 +32,7 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         .add_plugins((
             DefaultPlugins.set(WindowPlugin::default()),
-            shocovox_rs::raytracing::RenderBevyPlugin::<u32>::new(),
+            voxelhex::raytracing::RenderBevyPlugin::<u32>::new(),
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
             PanOrbitCameraPlugin,
             PerfUiPlugin,
@@ -51,8 +51,8 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
         TREE_SIZE as f32 * -2.,
     );
 
-    // fill octree with data
-    let mut tree: BoxTree = shocovox_rs::octree::BoxTree::new(TREE_SIZE, BRICK_DIMENSION)
+    // fill boxtree with data
+    let mut tree: BoxTree = voxelhex::boxtree::BoxTree::new(TREE_SIZE, BRICK_DIMENSION)
         .ok()
         .unwrap();
 

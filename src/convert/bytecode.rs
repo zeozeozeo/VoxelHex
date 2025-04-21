@@ -1,9 +1,9 @@
-use crate::object_pool::ObjectPool;
-use crate::octree::BOX_NODE_CHILDREN_COUNT;
-use crate::octree::{
+use crate::boxtree::BOX_NODE_CHILDREN_COUNT;
+use crate::boxtree::{
     types::{BrickData, MIPMapStrategy, MIPResamplingMethods, NodeChildren, NodeContent},
     Albedo, BoxTree,
 };
+use crate::object_pool::ObjectPool;
 use bendy::{
     decoding::{FromBencode, Object},
     encoding::{Error as BencodeError, SingleItemEncoder, ToBencode},

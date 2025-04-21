@@ -2,7 +2,7 @@ mod tests;
 pub mod vector;
 
 use crate::{
-    octree::BOX_NODE_DIMENSION,
+    boxtree::BOX_NODE_DIMENSION,
     spatial::{lut::SECTANT_OFFSET_LUT, math::vector::V3c, Cube},
 };
 use std::ops::Neg;
@@ -24,7 +24,7 @@ pub(crate) fn flat_projection(x: usize, y: usize, z: usize, size: usize) -> usiz
 /// The hash function assigns an index for each sectant, so every child cell can be indexed in a well defined manner
 /// * `offset` - From range 0..size in each dimensions
 /// * `size` - Size of the region to check for child sectants
-pub(crate) fn hash_region(offset: &V3c<f32>, size: f32) -> u8 {
+pub(crate) fn offset_sectant(offset: &V3c<f32>, size: f32) -> u8 {
     // Scale to 0..BOX_NODE_CHILDREN_COUNT, then project to an unique index
     debug_assert!(
         offset.x <= (size + FLOAT_ERROR_TOLERANCE)
@@ -146,7 +146,7 @@ pub(crate) fn set_occupied_bitmap_value(
         for y in update_start.y..(update_start.y + update_count).min(BOX_NODE_DIMENSION) {
             for z in update_start.z..(update_start.z + update_count).min(BOX_NODE_DIMENSION) {
                 let pos_mask = 0x01
-                    << hash_region(
+                    << offset_sectant(
                         &V3c::new(x as f32, y as f32, z as f32),
                         BOX_NODE_DIMENSION as f32,
                     );

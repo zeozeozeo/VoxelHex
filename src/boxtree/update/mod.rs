@@ -5,15 +5,17 @@ pub mod insert;
 mod tests;
 
 use crate::{
-    object_pool::empty_marker,
-    octree::{
+    boxtree::{
         child_sectant_for,
         types::{BoxTreeEntry, BrickData, NodeChildren, NodeContent, PaletteIndexValues},
         Albedo, BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
+    object_pool::empty_marker,
     spatial::{
         lut::SECTANT_OFFSET_LUT,
-        math::{flat_projection, hash_region, matrix_index_for, octant_in_sectants, vector::V3c},
+        math::{
+            flat_projection, matrix_index_for, octant_in_sectants, offset_sectant, vector::V3c,
+        },
         update_size_within, Cube,
     },
 };
@@ -172,7 +174,7 @@ impl<
         // and decide if the node content needs to be divided into bricks, and the update function to be called again
         match self.nodes.get_mut(node_key) {
             NodeContent::Leaf(bricks) => {
-                // In case brick_dimension == octree size, the 0 can not be a leaf...
+                // In case brick_dimension == boxtree size, the 0 can not be a leaf...
                 debug_assert!(self.brick_dim < self.boxtree_size);
                 match &mut bricks[target_child_sectant] {
                     //If there is no brick in the target position of the leaf, create one
@@ -922,7 +924,7 @@ impl<
                                 let cell_start =
                                     V3c::new(x as f32, y as f32, z as f32) * BRICK_CELL_SIZE as f32;
                                 let ref_sectant =
-                                    hash_region(&cell_start, superbrick_size) as usize;
+                                    offset_sectant(&cell_start, superbrick_size) as usize;
                                 let pos_in_child =
                                     cell_start - SECTANT_OFFSET_LUT[ref_sectant] * superbrick_size;
                                 let ref_voxel = match &bricks[ref_sectant] {
@@ -947,7 +949,7 @@ impl<
                                             let pos = cell_start
                                                 + V3c::new(cx as f32, cy as f32, cz as f32);
                                             let sectant =
-                                                hash_region(&pos, superbrick_size) as usize;
+                                                offset_sectant(&pos, superbrick_size) as usize;
                                             let pos_in_child =
                                                 pos - SECTANT_OFFSET_LUT[sectant] * superbrick_size;
 

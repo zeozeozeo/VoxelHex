@@ -1,7 +1,7 @@
-use crate::octree::{V3c, V3cf32};
+use crate::boxtree::{V3c, V3cf32};
 
 #[cfg(feature = "raytracing")]
-use crate::octree::BOX_NODE_CHILDREN_COUNT;
+use crate::boxtree::BOX_NODE_CHILDREN_COUNT;
 
 #[rustfmt::skip]
 pub(crate) const SECTANT_OFFSET_LUT: [V3cf32; 64] = [

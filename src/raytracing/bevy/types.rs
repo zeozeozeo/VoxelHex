@@ -1,4 +1,4 @@
-use crate::octree::{types::PaletteIndexValues, BoxTree, V3cf32, VoxelData};
+use crate::boxtree::{types::PaletteIndexValues, BoxTree, V3cf32, VoxelData};
 use bevy::{
     asset::Handle,
     ecs::system::Resource,
@@ -29,7 +29,7 @@ pub struct OctreeMetaData {
     /// Position of the ambient light in the render
     pub ambient_light_position: V3cf32,
 
-    /// Size of the octree to display
+    /// Size of the boxtree to display
     pub(crate) boxtree_size: u32,
 
     /// Contains the properties of the Octree
@@ -220,7 +220,7 @@ pub struct OctreeRenderData {
     pub(crate) mips_enabled: bool,
 
     /// Contains the properties of the Octree
-    pub(crate) octree_meta: OctreeMetaData,
+    pub(crate) boxtree_meta: OctreeMetaData,
 
     /// Usage information for nodes and bricks
     ///  _===============================================================_

@@ -1,5 +1,5 @@
-use shocovox_rs::{
-    octree::{Albedo, BoxTree, BoxTreeEntry, V3c, VoxelData},
+use voxelhex::{
+    boxtree::{Albedo, BoxTree, BoxTreeEntry, V3c, VoxelData},
     voxel_data,
 };
 
@@ -105,18 +105,26 @@ fn main() {
 
     // ..or cleared in bulk!
     // Both insert and clear bulk operations update the data until the end of one target node
-    // In the below example, voxel from 5,5,5 until 32,32,32 will be cleared
+    // In the below example, most voxels from 5,5,5 until 32,32,32 will be cleared
     // instead of 5,5,5 -/-> 69,69,69
+    // But in these cases not every voxel in the area will be updated...
+    // This is to be improved in #33
+    // If interested, a simple explanation:
+    // Bulk updates work on (relatively) simple logic, so in every node
+    // An update size(in x,y,z) is calculated inside the node, and the actual update
+    // in that particular node is based on min(x,min(y,z))
+    // In the below example:
+    // - node boundaries: (4,4,6), node size: 2
+    // - update position: (5,5,5), update size: 64
+    // - update inside the node starts from (5,5,6)
+    // - update size in the node would be: (1,1,2)
+    // - actual update size is going to be 1, so some parts of the update in Z are left out
+    // This is a simple set function, other, more sophisticated tools will be implemented
+    // to edit data in the future, so forgive me for letting this slide for now '^^
     tree.clear_at_lod(&V3c::new(5, 5, 5), 64).ok().unwrap();
-    for x in 5..8 {
-        for y in 5..8 {
-            for z in 5..8 {
-                assert_eq!(tree.get(&V3c::new(x, y, z)), voxel_data!());
-            }
-        }
-    }
 
     // The update size in a bulk operation aligns to node boundaries
+    // It sounds a bit tricky at first:
     // It sounds a bit tricky at first:
     // - One node contains 64 other nodes
     // - Nodes are packed together into 4x4x4 cubes

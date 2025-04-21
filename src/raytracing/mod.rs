@@ -1,4 +1,4 @@
-pub mod raytracing_on_cpu;
+pub mod cpu;
 mod tests;
 
 #[cfg(feature = "bevy_wgpu")]

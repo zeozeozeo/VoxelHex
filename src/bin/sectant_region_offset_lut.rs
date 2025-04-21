@@ -1,4 +1,4 @@
-use shocovox_rs::octree::V3c;
+use voxelhex::boxtree::V3c;
 
 pub(crate) const BOX_NODE_DIMENSION: usize = 4;
 pub(crate) const BOX_NODE_CHILDREN_COUNT: usize = 64;

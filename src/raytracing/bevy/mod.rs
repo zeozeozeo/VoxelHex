@@ -7,7 +7,7 @@ pub use crate::raytracing::bevy::types::{
     OctreeGPUHost, OctreeGPUView, OctreeSpyGlass, RenderBevyPlugin, SvxViewSet, Viewport,
 };
 use crate::{
-    octree::{Albedo, VoxelData},
+    boxtree::{Albedo, VoxelData},
     raytracing::bevy::{
         data::{handle_gpu_readback, sync_with_main_world, write_to_gpu},
         pipeline::prepare_bind_groups,

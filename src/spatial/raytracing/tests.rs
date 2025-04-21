@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod raytracing_tests {
     use crate::spatial::{
-        math::hash_region, raytracing::plane_line_intersection, raytracing::Ray, Cube, V3c,
+        math::offset_sectant, raytracing::plane_line_intersection, raytracing::Ray, Cube, V3c,
     };
 
     #[test]
@@ -49,42 +49,46 @@ mod raytracing_tests {
         };
 
         // Test front bottom left
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::unit(0.0), size));
+        let bound_fbl = Cube::child_bounds_for(&cube, offset_sectant(&V3c::unit(0.0), size));
         assert_eq!(bound_fbl.min_position, V3c::unit(0.0));
         assert_eq!(bound_fbl.size, 5.0);
 
         // Test front bottom right
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::new(17., 0., 0.), size));
+        let bound_fbl = Cube::child_bounds_for(&cube, offset_sectant(&V3c::new(17., 0., 0.), size));
         assert_eq!(bound_fbl.min_position, V3c::new(15.0, 0.0, 0.0));
         assert_eq!(bound_fbl.size, 5.0);
 
         // Test back bottom left
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::new(0., 0., 17.), size));
+        let bound_fbl = Cube::child_bounds_for(&cube, offset_sectant(&V3c::new(0., 0., 17.), size));
         assert_eq!(bound_fbl.min_position, V3c::new(0.0, 0.0, 15.0));
         assert_eq!(bound_fbl.size, 5.0);
 
         // Test back bottom right
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::new(17., 0., 17.), size));
+        let bound_fbl =
+            Cube::child_bounds_for(&cube, offset_sectant(&V3c::new(17., 0., 17.), size));
         assert_eq!(bound_fbl.min_position, V3c::new(15.0, 0.0, 15.0));
         assert_eq!(bound_fbl.size, 5.0);
 
         // Test front top left
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::new(0., 17., 0.), size));
+        let bound_fbl = Cube::child_bounds_for(&cube, offset_sectant(&V3c::new(0., 17., 0.), size));
         assert_eq!(bound_fbl.min_position, V3c::new(0.0, 15.0, 0.0));
         assert_eq!(bound_fbl.size, 5.0);
 
         // Test front top right
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::new(17., 17., 0.), size));
+        let bound_fbl =
+            Cube::child_bounds_for(&cube, offset_sectant(&V3c::new(17., 17., 0.), size));
         assert_eq!(bound_fbl.min_position, V3c::new(15.0, 15.0, 0.0));
         assert_eq!(bound_fbl.size, 5.0);
 
         // Test back top left
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::new(0., 17., 17.), size));
+        let bound_fbl =
+            Cube::child_bounds_for(&cube, offset_sectant(&V3c::new(0., 17., 17.), size));
         assert_eq!(bound_fbl.min_position, V3c::new(0.0, 15.0, 15.0));
         assert_eq!(bound_fbl.size, 5.0);
 
         // Test back top right
-        let bound_fbl = Cube::child_bounds_for(&cube, hash_region(&V3c::new(17., 17., 17.), size));
+        let bound_fbl =
+            Cube::child_bounds_for(&cube, offset_sectant(&V3c::new(17., 17., 17.), size));
         assert_eq!(bound_fbl.min_position, V3c::new(15.0, 15.0, 15.0));
         assert_eq!(bound_fbl.size, 5.0);
     }

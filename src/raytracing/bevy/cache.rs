@@ -1,9 +1,9 @@
 use crate::{
-    object_pool::empty_marker,
-    octree::{
+    boxtree::{
         types::{BrickData, NodeContent},
         BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT, OOB_SECTANT,
     },
+    object_pool::empty_marker,
     raytracing::bevy::types::{
         BrickOwnedBy, BrickUpdate, CacheUpdatePackage, OctreeGPUDataHandler, OctreeRenderData,
         VictimPointer,
@@ -160,7 +160,7 @@ impl OctreeGPUDataHandler {
 
     /// Provides the mask inside a metadata element if the brick under the given index is used.
     fn get_brick_used(used_bits: &[u32], brick_index: usize) -> bool {
-        0 != (used_bits[brick_index / 31] & 0x01 << (1 + (brick_index % 31)))
+        0 != (used_bits[brick_index / 31] & (0x01 << (1 + (brick_index % 31))))
     }
 
     /// Updates the given metadata array to set the given brick as used
@@ -453,15 +453,14 @@ impl OctreeGPUDataHandler {
                 for sectant in 0..BOX_NODE_CHILDREN_COUNT {
                     let child_key = tree.node_children[node_key].child(sectant as u8);
                     if child_key != empty_marker::<u32>() as usize {
-                        self.render_data.node_children
-                            [parent_first_child_index + sectant as usize] = *self
+                        self.render_data.node_children[parent_first_child_index + sectant] = *self
                             .node_key_vs_meta_index
                             .get_by_left(&child_key)
                             .unwrap_or(&(empty_marker::<u32>() as usize))
                             as u32;
                     } else {
-                        self.render_data.node_children
-                            [parent_first_child_index + sectant as usize] = empty_marker::<u32>();
+                        self.render_data.node_children[parent_first_child_index + sectant] =
+                            empty_marker::<u32>();
                     }
                 }
             }
@@ -474,8 +473,8 @@ impl OctreeGPUDataHandler {
                 }
             }
             NodeContent::Leaf(bricks) => {
-                for sectant in 0..BOX_NODE_CHILDREN_COUNT {
-                    if let BrickData::Solid(voxel) = bricks[sectant] {
+                for (sectant, brick) in bricks.iter().enumerate().take(BOX_NODE_CHILDREN_COUNT) {
+                    if let BrickData::Solid(voxel) = brick {
                         self.render_data.node_children[parent_first_child_index + sectant] =
                             0x80000000 | voxel;
                     } else {
@@ -547,7 +546,7 @@ impl OctreeGPUDataHandler {
     }
 
     /// Makes space for the requested brick and updates brick ownership if needed
-    /// * `tree` - The octree where the brick is found
+    /// * `tree` - The boxtree where the brick is found
     /// * `node_key` - The key for the requested leaf node, whoose child needs to be uploaded
     /// * `target_sectant` - The sectant where the target brick lies
     /// * `returns` - child descriptor, brick updates applied, nodes updated during insertion

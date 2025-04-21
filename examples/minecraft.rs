@@ -5,8 +5,8 @@ use bevy::{prelude::*, window::WindowPlugin};
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
 #[cfg(feature = "bevy_wgpu")]
-use shocovox_rs::{
-    octree::{BoxTree, MIPMapStrategy, V3c, V3cf32},
+use voxelhex::{
+    boxtree::{BoxTree, MIPMapStrategy, V3c, V3cf32},
     raytracing::{OctreeGPUHost, Ray, SvxViewSet, Viewport},
 };
 
@@ -36,7 +36,7 @@ fn main() {
                 }),
                 ..default()
             }),
-            shocovox_rs::raytracing::RenderBevyPlugin::<u32>::new(),
+            voxelhex::raytracing::RenderBevyPlugin::<u32>::new(),
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
             PanOrbitCameraPlugin,
             PerfUiPlugin,

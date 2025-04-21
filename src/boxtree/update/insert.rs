@@ -1,8 +1,8 @@
 use crate::{
-    octree::{
+    boxtree::{
         detail::child_sectant_for,
         types::{BoxTreeEntry, BrickData, NodeChildren, NodeContent, OctreeError},
-        BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
+        BoxTree, VoxelData, BOX_NODE_DIMENSION,
     },
     spatial::{
         math::{flat_projection, matrix_index_for, vector::V3c},
@@ -10,6 +10,9 @@ use crate::{
     },
 };
 use std::hash::Hash;
+
+#[cfg(debug_assertions)]
+use crate::boxtree::BOX_NODE_CHILDREN_COUNT;
 
 #[cfg(feature = "bytecode")]
 use bendy::{decoding::FromBencode, encoding::ToBencode};
@@ -39,7 +42,7 @@ impl<
     //  █████ █████  ░░█████░░█████████  ██████████ █████   █████    █████
     // ░░░░░ ░░░░░    ░░░░░  ░░░░░░░░░  ░░░░░░░░░░ ░░░░░   ░░░░░    ░░░░░
     //####################################################################################
-    /// Inserts the given data into the octree into the given voxel position
+    /// Inserts the given data into the boxtree into the given voxel position
     /// If there is already available data it overwrites it, except if all components are empty
     /// If all components are empty, this is a no-op, to erase data, please use @clear
     /// * `position` - the position to insert the data into, must be contained within the tree
@@ -54,7 +57,7 @@ impl<
         self.insert_internal(true, position, data.into())
     }
 
-    /// Inserts the given data for the octree in the given lod(level of detail) based on insert_size
+    /// Inserts the given data for the boxtree in the given lod(level of detail) based on insert_size
     /// If there is already available data it overwrites it, except if all components are empty
     /// * `position` - the position to insert the data into, must be contained within the tree
     /// * `insert_size` - The size to update. The value `brick_dimension * (2^x)` is used instead, when size is higher, than brick_dimension
@@ -71,7 +74,7 @@ impl<
         self.insert_at_lod_internal(true, position, insert_size, data.into())
     }
 
-    /// Updates the given data at the the given voxel position inside the octree
+    /// Updates the given data at the the given voxel position inside the boxtree
     /// Already available data is untouched, if it is not specified in the entry
     /// If all components are empty, this is a no-op, to erase data, please use @clear
     /// * `position` - the position to insert the data into, must be contained within the tree

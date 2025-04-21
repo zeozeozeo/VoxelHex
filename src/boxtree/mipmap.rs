@@ -1,16 +1,16 @@
-use crate::octree::BOX_NODE_DIMENSION;
+use crate::boxtree::BOX_NODE_DIMENSION;
 use crate::spatial::lut::SECTANT_OFFSET_LUT;
 use crate::{
-    object_pool::empty_marker,
-    octree::{
+    boxtree::{
         types::{
             BoxTreeEntry, BrickData, MIPMapStrategy, MIPResamplingMethods, NodeChildren,
             NodeContent, PaletteIndexValues, StrategyUpdater,
         },
         Albedo, BoxTree, VoxelData, OOB_SECTANT,
     },
+    object_pool::empty_marker,
     spatial::{
-        math::{flat_projection, hash_region, matrix_index_for, vector::V3c},
+        math::{flat_projection, matrix_index_for, offset_sectant, vector::V3c},
         Cube,
     },
 };
@@ -475,7 +475,7 @@ impl<
                         // In this case the target child_sectant needs to be updated dynamically to accomodate this
                         // It would be possible to use an if condition to handle when brick_dim == 1
                         // but the performance gain is neglegible
-                        let child_sectant = hash_region(
+                        let child_sectant = offset_sectant(
                             &((*pos_in_parent_mip).into()),
                             (self.brick_dim * BOX_NODE_DIMENSION as u32) as f32,
                         );
@@ -805,7 +805,7 @@ impl<
     //  █████   █████ ██████████ ░░█████████  █████   █████ ███████████ ░░█████████
     // ░░░░░   ░░░░░ ░░░░░░░░░░   ░░░░░░░░░  ░░░░░   ░░░░░ ░░░░░░░░░░░   ░░░░░░░░░
     //####################################################################################
-    /// Recalculates MIPs for the whole content of the octree
+    /// Recalculates MIPs for the whole content of the boxtree
     pub fn recalculate_mips(&mut self) {
         self.0.node_mips = vec![BrickData::Empty; self.0.nodes.len()];
 

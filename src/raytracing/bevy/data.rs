@@ -1,9 +1,9 @@
 use crate::{
-    object_pool::empty_marker,
-    octree::{
+    boxtree::{
         types::{BrickData, NodeContent, PaletteIndexValues},
         BoxTree, V3c, VoxelData, BOX_NODE_CHILDREN_COUNT, OOB_SECTANT,
     },
+    object_pool::empty_marker,
     raytracing::bevy::{
         create_output_texture,
         types::{
@@ -118,7 +118,7 @@ impl<
         let gpu_data_handler = OctreeGPUDataHandler {
             render_data: OctreeRenderData {
                 mips_enabled: self.tree.mip_map_strategy.is_enabled(),
-                octree_meta: OctreeMetaData {
+                boxtree_meta: OctreeMetaData {
                     boxtree_size: self.tree.boxtree_size,
                     tree_properties: boxtree_properties(&self.tree),
                     ambient_light_color: V3c::new(1., 1., 1.),
@@ -449,12 +449,12 @@ pub(crate) fn write_to_gpu<
         let tree = &tree_host.tree;
         if view.data_handler.render_data.mips_enabled != tree.mip_map_strategy.is_enabled() {
             // Regenerate feature bits
-            view.data_handler.render_data.octree_meta.tree_properties = boxtree_properties(tree);
+            view.data_handler.render_data.boxtree_meta.tree_properties = boxtree_properties(tree);
 
             // Write to GPU
             let mut buffer = UniformBuffer::new(Vec::<u8>::new());
             buffer
-                .write(&view.data_handler.render_data.octree_meta)
+                .write(&view.data_handler.render_data.boxtree_meta)
                 .unwrap();
             pipeline.render_queue.write_buffer(
                 &resources.node_metadata_buffer,
