@@ -938,7 +938,7 @@ fn is_empty(e: PaletteIndexValues) -> bool {
 }
 
 const BOXTREE_ROOT_NODE_KEY = 0u;
-struct OctreeMetaData {
+struct BoxtreeMetaData {
     ambient_light_color: vec3f,
     ambient_light_position: vec3f,
     boxtree_size: u32,
@@ -965,7 +965,7 @@ var<storage, read_write> node_requests: array<atomic<u32>>;
 var<uniform> debug_data: u32;
 
 @group(1) @binding(0)
-var<uniform> boxtree_meta_data: OctreeMetaData;
+var<uniform> boxtree_meta_data: BoxtreeMetaData;
 
 @group(1) @binding(1)
 var<storage, read_write> used_bits: array<atomic<u32>>;

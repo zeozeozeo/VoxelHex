@@ -5,7 +5,7 @@ use crate::{
     },
     object_pool::empty_marker,
     raytracing::bevy::types::{
-        BrickOwnedBy, BrickUpdate, CacheUpdatePackage, OctreeGPUDataHandler, OctreeRenderData,
+        BoxTreeGPUDataHandler, BoxTreeRenderData, BrickOwnedBy, BrickUpdate, CacheUpdatePackage,
         VictimPointer,
     },
 };
@@ -83,7 +83,7 @@ impl VictimPointer {
     /// And finally the index range where nodes were updated
     fn first_available_node(
         &mut self,
-        render_data: &mut OctreeRenderData,
+        render_data: &mut BoxTreeRenderData,
     ) -> (usize, Option<(usize, u8)>, Range<usize>) {
         // If there is space left in the cache, use it all up
         if !self.is_full() {
@@ -137,7 +137,7 @@ impl VictimPointer {
     }
 }
 
-impl OctreeGPUDataHandler {
+impl BoxTreeGPUDataHandler {
     //##############################################################################
     //  ██████████     █████████   ███████████   █████████
     // ░░███░░░░███   ███░░░░░███ ░█░░░███░░░█  ███░░░░░███

@@ -22,7 +22,7 @@ use std::{
 };
 
 #[derive(Clone, ShaderType)]
-pub struct OctreeMetaData {
+pub struct BoxTreeMetaData {
     /// Color of the ambient light in the render
     pub ambient_light_color: V3cf32,
 
@@ -79,7 +79,7 @@ where
 
 #[derive(Resource, Clone, TypePath, ExtractResource)]
 #[type_path = "shocovox::gpu::OctreeGPUHost"]
-pub struct OctreeGPUHost<T = u32>
+pub struct BoxTreeGPUHost<T = u32>
 where
     T: Default + Clone + Eq + VoxelData + Send + Sync + Hash + 'static,
 {
@@ -87,15 +87,15 @@ where
 }
 
 #[derive(Default, Resource, Clone, TypePath, ExtractResource)]
-#[type_path = "shocovox::gpu::SvxViewSet"]
-pub struct SvxViewSet {
-    pub views: Vec<Arc<Mutex<OctreeGPUView>>>,
-    pub(crate) resources: Vec<Option<OctreeRenderDataResources>>,
+#[type_path = "shocovox::gpu::VhxViewSet"]
+pub struct VhxViewSet {
+    pub views: Vec<Arc<Mutex<BoxTreeGPUView>>>,
+    pub(crate) resources: Vec<Option<BoxTreeRenderDataResources>>,
 }
 
 /// The Camera responsible for storing frustum and view related data
 #[derive(Clone)]
-pub struct OctreeSpyGlass {
+pub struct BoxTreeSpyGlass {
     pub(crate) output_texture: Handle<Image>,
     pub(crate) viewport_changed: bool,
     pub(crate) viewport: Viewport,
@@ -104,9 +104,9 @@ pub struct OctreeSpyGlass {
 
 /// A View of an Octree
 #[derive(Resource, Clone)]
-pub struct OctreeGPUView {
+pub struct BoxTreeGPUView {
     /// The camera for casting the rays
-    pub spyglass: OctreeSpyGlass,
+    pub spyglass: BoxTreeSpyGlass,
 
     /// Set to true if the view needs to be reloaded
     pub(crate) reload: bool,
@@ -118,7 +118,7 @@ pub struct OctreeGPUView {
     pub data_ready: bool,
 
     /// The data handler responsible for uploading data to the GPU
-    pub(crate) data_handler: OctreeGPUDataHandler,
+    pub(crate) data_handler: BoxTreeGPUDataHandler,
 
     /// The currently used resolution the raycasting dimensions are based for the base ray
     pub(crate) resolution: [u32; 2],
@@ -150,8 +150,8 @@ pub(crate) enum BrickOwnedBy {
 }
 
 #[derive(Resource, Clone)]
-pub struct OctreeGPUDataHandler {
-    pub(crate) render_data: OctreeRenderData,
+pub struct BoxTreeGPUDataHandler {
+    pub(crate) render_data: BoxTreeRenderData,
     pub(crate) victim_node: VictimPointer,
     pub(crate) victim_brick: usize,
     pub(crate) node_key_vs_meta_index: BiHashMap<usize, usize>,
@@ -160,7 +160,7 @@ pub struct OctreeGPUDataHandler {
 }
 
 #[derive(Clone)]
-pub(crate) struct OctreeRenderDataResources {
+pub(crate) struct BoxTreeRenderDataResources {
     // Spyglass group
     // --{
     pub(crate) spyglass_bind_group: BindGroup,
@@ -215,12 +215,12 @@ pub(crate) struct CacheUpdatePackage<'a> {
 
 #[derive(Clone, TypePath)]
 #[type_path = "shocovox::gpu::ShocoVoxRenderData"]
-pub struct OctreeRenderData {
+pub struct BoxTreeRenderData {
     /// CPU only field, contains stored MIP feature enabled state
     pub(crate) mips_enabled: bool,
 
     /// Contains the properties of the Octree
-    pub(crate) boxtree_meta: OctreeMetaData,
+    pub(crate) boxtree_meta: BoxTreeMetaData,
 
     /// Usage information for nodes and bricks
     ///  _===============================================================_
@@ -281,7 +281,7 @@ pub struct OctreeRenderData {
 }
 
 #[derive(Resource)]
-pub(crate) struct SvxRenderPipeline {
+pub(crate) struct VhxRenderPipeline {
     pub update_tree: bool,
     pub(crate) render_queue: RenderQueue,
     pub(crate) update_pipeline: CachedComputePipelineId,
@@ -290,20 +290,20 @@ pub(crate) struct SvxRenderPipeline {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub(crate) struct SvxLabel;
+pub(crate) struct VhxLabel;
 
-pub(crate) struct SvxRenderNode {
+pub(crate) struct VhxRenderNode {
     pub(crate) ready: bool,
 }
 
 #[cfg(test)]
 mod types_wgpu_byte_compatibility_tests {
-    use super::{OctreeMetaData, Viewport};
+    use super::{BoxTreeMetaData, Viewport};
     use bevy::render::render_resource::encase::ShaderType;
 
     #[test]
     fn test_wgpu_compatibility() {
         Viewport::assert_uniform_compat();
-        OctreeMetaData::assert_uniform_compat();
+        BoxTreeMetaData::assert_uniform_compat();
     }
 }

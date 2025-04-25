@@ -125,7 +125,6 @@ fn main() {
 
     // The update size in a bulk operation aligns to node boundaries
     // It sounds a bit tricky at first:
-    // It sounds a bit tricky at first:
     // - One node contains 64 other nodes
     // - Nodes are packed together into 4x4x4 cubes
     // - A leaf node is the size of 64 voxel bricks, strucutre as above

@@ -4,14 +4,14 @@ mod pipeline;
 pub mod types;
 
 pub use crate::raytracing::bevy::types::{
-    OctreeGPUHost, OctreeGPUView, OctreeSpyGlass, RenderBevyPlugin, SvxViewSet, Viewport,
+    BoxTreeGPUHost, BoxTreeGPUView, BoxTreeSpyGlass, RenderBevyPlugin, VhxViewSet, Viewport,
 };
 use crate::{
     boxtree::{Albedo, VoxelData},
     raytracing::bevy::{
         data::{handle_gpu_readback, sync_with_main_world, write_to_gpu},
         pipeline::prepare_bind_groups,
-        types::{SvxLabel, SvxRenderNode, SvxRenderPipeline},
+        types::{VhxLabel, VhxRenderNode, VhxRenderPipeline},
     },
 };
 use bendy::{decoding::FromBencode, encoding::ToBencode};
@@ -53,7 +53,7 @@ impl From<Albedo> for Vec4 {
     }
 }
 
-impl OctreeGPUView {
+impl BoxTreeGPUView {
     /// Erases the whole view to be uploaded to the GPU again
     pub fn reload(&mut self) {
         self.reload = true;
@@ -87,7 +87,7 @@ impl OctreeGPUView {
     }
 }
 
-impl OctreeSpyGlass {
+impl BoxTreeSpyGlass {
     pub fn viewport(&self) -> &Viewport {
         &self.viewport
     }
@@ -140,7 +140,7 @@ pub(crate) fn create_output_texture(
 }
 
 pub(crate) fn handle_resolution_updates(
-    viewset: Option<ResMut<SvxViewSet>>,
+    viewset: Option<ResMut<VhxViewSet>>,
     images: ResMut<Assets<Image>>,
     server: Res<AssetServer>,
 ) {
@@ -195,8 +195,8 @@ impl<
 {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            ExtractResourcePlugin::<OctreeGPUHost<T>>::default(),
-            ExtractResourcePlugin::<SvxViewSet>::default(),
+            ExtractResourcePlugin::<BoxTreeGPUHost<T>>::default(),
+            ExtractResourcePlugin::<VhxViewSet>::default(),
         ));
         app.add_systems(Update, handle_resolution_updates);
         let render_app = app.sub_app_mut(RenderApp);
@@ -210,12 +210,12 @@ impl<
             ),
         );
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
-        render_graph.add_node(SvxLabel, SvxRenderNode { ready: false });
-        render_graph.add_node_edge(SvxLabel, bevy::render::graph::CameraDriverLabel);
+        render_graph.add_node(VhxLabel, VhxRenderNode { ready: false });
+        render_graph.add_node_edge(VhxLabel, bevy::render::graph::CameraDriverLabel);
     }
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-        render_app.init_resource::<SvxRenderPipeline>();
+        render_app.init_resource::<VhxRenderPipeline>();
     }
 }

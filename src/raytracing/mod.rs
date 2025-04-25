@@ -8,6 +8,6 @@ pub use crate::spatial::raytracing::Ray;
 
 #[cfg(feature = "bevy_wgpu")]
 pub use bevy::types::{
-    OctreeGPUHost, OctreeGPUView, OctreeRenderData, OctreeSpyGlass, RenderBevyPlugin, SvxViewSet,
-    Viewport,
+    BoxTreeGPUHost, BoxTreeGPUView, BoxTreeRenderData, BoxTreeSpyGlass, RenderBevyPlugin,
+    VhxViewSet, Viewport,
 };

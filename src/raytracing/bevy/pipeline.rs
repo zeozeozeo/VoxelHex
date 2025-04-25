@@ -1,7 +1,7 @@
 use crate::{
     boxtree::types::PaletteIndexValues,
     raytracing::bevy::types::{
-        OctreeGPUView, OctreeMetaData, SvxRenderNode, SvxRenderPipeline, Viewport,
+        BoxTreeGPUView, BoxTreeMetaData, VhxRenderNode, VhxRenderPipeline, Viewport,
     },
 };
 use bevy::{
@@ -28,9 +28,9 @@ use bevy::{
 };
 use std::borrow::Cow;
 
-use super::types::{OctreeRenderDataResources, SvxViewSet};
+use super::types::{BoxTreeRenderDataResources, VhxViewSet};
 
-impl FromWorld for SvxRenderPipeline {
+impl FromWorld for VhxRenderPipeline {
     //##############################################################################
     // ███████████  █████ ██████   █████ ██████████
     // ░░███░░░░░███░░███ ░░██████ ░░███ ░░███░░░░███
@@ -104,7 +104,7 @@ impl FromWorld for SvxRenderPipeline {
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: Some(<OctreeMetaData as ShaderType>::min_size()),
+                        min_binding_size: Some(<BoxTreeMetaData as ShaderType>::min_size()),
                     },
                     count: None,
                 },
@@ -197,7 +197,7 @@ impl FromWorld for SvxRenderPipeline {
             entry_point: Cow::from("update"),
         });
 
-        SvxRenderPipeline {
+        VhxRenderPipeline {
             render_queue: world.resource::<RenderQueue>().clone(),
             update_tree: true,
             spyglass_bind_group_layout,
@@ -218,15 +218,15 @@ impl FromWorld for SvxRenderPipeline {
 // ░░░░░   ░░░░░   ░░░░░░░░   ░░░░░    ░░░░░
 //##############################################################################
 const WORKGROUP_SIZE: u32 = 8;
-impl render_graph::Node for SvxRenderNode {
+impl render_graph::Node for VhxRenderNode {
     fn update(&mut self, world: &mut World) {
-        let svx_pipeline = world.resource::<SvxRenderPipeline>();
+        let vhx_pipeline = world.resource::<VhxRenderPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         if !self.ready {
             if let CachedPipelineState::Ok(_) =
-                pipeline_cache.get_compute_pipeline_state(svx_pipeline.update_pipeline)
+                pipeline_cache.get_compute_pipeline_state(vhx_pipeline.update_pipeline)
             {
-                self.ready = !world.resource::<SvxViewSet>().views.is_empty();
+                self.ready = !world.resource::<VhxViewSet>().views.is_empty();
             }
         }
     }
@@ -237,10 +237,10 @@ impl render_graph::Node for SvxRenderNode {
         render_context: &mut RenderContext,
         world: &World,
     ) -> Result<(), render_graph::NodeRunError> {
-        let svx_pipeline = world.resource::<SvxRenderPipeline>();
-        let svx_viewset = world.resource::<SvxViewSet>();
-        let current_view = svx_viewset.views[0].lock().unwrap();
-        let resources = svx_viewset.resources[0].as_ref();
+        let vhx_pipeline = world.resource::<VhxRenderPipeline>();
+        let vhx_view_set = world.resource::<VhxViewSet>();
+        let current_view = vhx_view_set.views[0].lock().unwrap();
+        let resources = vhx_view_set.resources[0].as_ref();
         if self.ready && resources.is_some() {
             let resources = resources.unwrap();
             let pipeline_cache = world.resource::<PipelineCache>();
@@ -261,7 +261,7 @@ impl render_graph::Node for SvxRenderNode {
                 pass.set_bind_group(0, &resources.spyglass_bind_group, &[]);
                 pass.set_bind_group(1, &resources.tree_bind_group, &[]);
                 let pipeline = pipeline_cache
-                    .get_compute_pipeline(svx_pipeline.update_pipeline)
+                    .get_compute_pipeline(vhx_pipeline.update_pipeline)
                     .unwrap();
                 pass.set_pipeline(pipeline);
                 pass.dispatch_workgroups(
@@ -323,10 +323,10 @@ impl render_graph::Node for SvxRenderNode {
 //  ░░█████████  █████   █████ ░░░███████░   ░░████████   █████
 //##############################################################################
 pub(crate) fn create_spyglass_bind_group(
-    pipeline: &mut SvxRenderPipeline,
+    pipeline: &mut VhxRenderPipeline,
     render_device: &Res<RenderDevice>,
     gpu_images: &Res<RenderAssets<GpuImage>>,
-    tree_view: &OctreeGPUView,
+    tree_view: &BoxTreeGPUView,
 ) -> (BindGroup, Buffer, Buffer, Buffer) {
     let mut buffer = UniformBuffer::new([0u8; Viewport::SHADER_SIZE.get() as usize]);
     buffer.write(&tree_view.spyglass.viewport).unwrap();
@@ -405,11 +405,11 @@ pub(crate) fn create_spyglass_bind_group(
 //      ░░░      ░░░░░ ░░░░░░░░░░      ░░░   ░░░         ░░░░░   ░░░░░ ░░░░░░░░░░  ░░░░░░░░░
 //##############################################################################
 fn create_view_resources(
-    pipeline: &mut SvxRenderPipeline,
+    pipeline: &mut VhxRenderPipeline,
     render_device: Res<RenderDevice>,
     gpu_images: Res<RenderAssets<GpuImage>>,
-    tree_view: &OctreeGPUView,
-) -> OctreeRenderDataResources {
+    tree_view: &BoxTreeGPUView,
+) -> BoxTreeRenderDataResources {
     let render_data = &tree_view.data_handler.render_data;
     //##############################################################################
     //  ███████████ ███████████   ██████████ ██████████
@@ -547,7 +547,7 @@ fn create_view_resources(
     let (spyglass_bind_group, viewport_buffer, node_requests_buffer, readable_node_requests_buffer) =
         create_spyglass_bind_group(pipeline, &render_device, &gpu_images, tree_view);
 
-    OctreeRenderDataResources {
+    BoxTreeRenderDataResources {
         spyglass_bind_group,
         viewport_buffer,
         node_requests_buffer,
@@ -595,16 +595,16 @@ fn create_view_resources(
 pub(crate) fn prepare_bind_groups(
     gpu_images: Res<RenderAssets<GpuImage>>,
     render_device: Res<RenderDevice>,
-    mut pipeline: ResMut<SvxRenderPipeline>,
-    mut svx_viewset: ResMut<SvxViewSet>,
+    mut pipeline: ResMut<VhxRenderPipeline>,
+    mut vhx_view_set: ResMut<VhxViewSet>,
 ) {
     {
         // Handle when no udpates are needed
-        let view = svx_viewset.views[0].lock().unwrap();
+        let view = vhx_view_set.views[0].lock().unwrap();
         // No need to update view if
         if view.spyglass.output_texture == view.output_texture // output texture stored in CPU matches with the one used in the GPU bind group
             && (view.new_resolution.is_some() // a new resolution is requested and the texture is pending still
-                || (svx_viewset.resources[0].is_some() && !pipeline.update_tree))
+                || (vhx_view_set.resources[0].is_some() && !pipeline.update_tree))
         // or tree is up-todate
         {
             return;
@@ -613,8 +613,8 @@ pub(crate) fn prepare_bind_groups(
     {
         // Rebuild view becasue of changed output texture ( most likely resolution change )
         let output_texture_changed = {
-            let view = svx_viewset.views[0].lock().unwrap();
-            svx_viewset.resources[0].is_some()
+            let view = vhx_view_set.views[0].lock().unwrap();
+            vhx_view_set.resources[0].is_some()
                 && view.spyglass.output_texture != view.output_texture
                 && gpu_images.get(&view.output_texture).is_some()
         };
@@ -628,24 +628,24 @@ pub(crate) fn prepare_bind_groups(
                 &mut pipeline,
                 &render_device,
                 &gpu_images,
-                &svx_viewset.views[0].lock().unwrap(),
+                &vhx_view_set.views[0].lock().unwrap(),
             );
 
-            let view_resources = svx_viewset.resources[0].as_mut().unwrap();
+            let view_resources = vhx_view_set.resources[0].as_mut().unwrap();
             view_resources.spyglass_bind_group = spyglass_bind_group;
             view_resources.viewport_buffer = viewport_buffer;
             view_resources.node_requests_buffer = node_requests_buffer;
             view_resources.readable_node_requests_buffer = readable_node_requests_buffer;
 
             // update spyglass output texture too!
-            let mut view = svx_viewset.views[0].lock().unwrap();
+            let mut view = vhx_view_set.views[0].lock().unwrap();
             view.spyglass.output_texture = view.output_texture.clone();
         }
     }
 
     // build everything from the ground up
-    if let Some(resources) = &svx_viewset.resources[0] {
-        let tree_view = &svx_viewset.views[0].lock().unwrap();
+    if let Some(resources) = &vhx_view_set.resources[0] {
+        let tree_view = &vhx_view_set.views[0].lock().unwrap();
         let render_data = &tree_view.data_handler.render_data;
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -698,9 +698,9 @@ pub(crate) fn prepare_bind_groups(
             &mut pipeline,
             render_device,
             gpu_images,
-            &svx_viewset.views[0].lock().unwrap(),
+            &vhx_view_set.views[0].lock().unwrap(),
         );
-        svx_viewset.resources[0] = Some(view_resources);
+        vhx_view_set.resources[0] = Some(view_resources);
     }
 
     pipeline.update_tree = false;
