@@ -1,5 +1,5 @@
 mod mipmap_tests {
-    use crate::octree::{Albedo, BoxTree, MIPResamplingMethods, V3c, OOB_SECTANT};
+    use crate::boxtree::{Albedo, BoxTree, MIPResamplingMethods, V3c, OOB_SECTANT};
 
     #[test]
     fn test_mixed_mip_lvl1() {
@@ -19,17 +19,17 @@ mod mipmap_tests {
             .switch_albedo_mip_maps(true)
             .set_method_at(1, MIPResamplingMethods::BoxFilter);
         tree.insert(&V3c::new(0, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         assert!(tree
             .albedo_mip_map_resampling_strategy()
@@ -64,17 +64,17 @@ mod mipmap_tests {
             .switch_albedo_mip_maps(true)
             .set_method_at(1, MIPResamplingMethods::BoxFilter);
         tree.insert(&V3c::new(126, 126, 126), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(126, 126, 127), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(126, 127, 126), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(126, 127, 127), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(127, 126, 126), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(127, 126, 127), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         assert!(tree
             .albedo_mip_map_resampling_strategy()
@@ -101,17 +101,17 @@ mod mipmap_tests {
             .switch_albedo_mip_maps(true)
             .set_method_at(1, MIPResamplingMethods::BoxFilter);
         tree.insert(&V3c::new(0, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 0, 1), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 1), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 1), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         assert!(tree
             .albedo_mip_map_resampling_strategy()
@@ -181,17 +181,17 @@ mod mipmap_tests {
             .switch_albedo_mip_maps(true)
             .set_method_at(1, MIPResamplingMethods::BoxFilter);
         tree.insert(&V3c::new(0, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         assert!(tree
             .albedo_mip_map_resampling_strategy()
@@ -256,30 +256,30 @@ mod mipmap_tests {
             .set_method_at(1, MIPResamplingMethods::BoxFilter)
             .set_method_at(2, MIPResamplingMethods::BoxFilter);
         tree.insert(&V3c::new(0, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         tree.insert(&V3c::new(16, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(16, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(16, 1, 0), &blue)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(16, 1, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(17, 1, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(17, 0, 1), &blue)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         // For child position 0,0,0
         let rg_mix: Albedo = (
@@ -366,30 +366,30 @@ mod mipmap_tests {
         let mut tree: BoxTree = BoxTree::new(64, 4).ok().unwrap();
         tree.auto_simplify = false;
         tree.insert(&V3c::new(0, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(0, 1, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(1, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         tree.insert(&V3c::new(16, 0, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(16, 0, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(16, 1, 0), &blue)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(16, 1, 1), &green)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(17, 1, 0), &red)
-            .expect("octree insert");
+            .expect("boxtree insert");
         tree.insert(&V3c::new(17, 0, 1), &blue)
-            .expect("octree insert");
+            .expect("boxtree insert");
 
         // Switch MIP maps on, calculate the correct values
         tree.albedo_mip_map_resampling_strategy()

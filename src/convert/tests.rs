@@ -1,4 +1,4 @@
-use crate::octree::{
+use crate::boxtree::{
     types::{Albedo, BrickData, NodeChildren, NodeContent, PaletteIndexValues},
     BoxTree, BoxTreeEntry, MIPResamplingMethods, V3c, BOX_NODE_CHILDREN_COUNT,
 };

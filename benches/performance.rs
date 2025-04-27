@@ -1,9 +1,9 @@
 use criterion::{criterion_group, criterion_main};
 
-use shocovox_rs::octree::{Albedo, BoxTree, V3c};
+use voxelhex::boxtree::{Albedo, BoxTree, V3c};
 
 #[cfg(feature = "raytracing")]
-use shocovox_rs::raytracing::Ray;
+use voxelhex::raytracing::Ray;
 
 fn criterion_benchmark(c: &mut criterion::Criterion) {
     #[cfg(feature = "raytracing")]
@@ -83,7 +83,7 @@ fn criterion_benchmark(c: &mut criterion::Criterion) {
             )
             .expect("Octree insert to suceeed");
         }
-        c.bench_function("octree insert", |b| {
+        c.bench_function("boxtree insert", |b| {
             b.iter(|| {
                 tree.insert(
                     &V3c::new(
@@ -97,7 +97,7 @@ fn criterion_benchmark(c: &mut criterion::Criterion) {
             });
         });
 
-        c.bench_function("octree clear", |b| {
+        c.bench_function("boxtree clear", |b| {
             b.iter(|| {
                 tree.clear(&V3c::new(
                     rng.gen_range(0..tree_size),
@@ -109,7 +109,7 @@ fn criterion_benchmark(c: &mut criterion::Criterion) {
             });
         });
 
-        c.bench_function("octree get", |b| {
+        c.bench_function("boxtree get", |b| {
             b.iter(|| {
                 tree.get(&V3c::new(
                     rng.gen_range(0..tree_size),
@@ -120,15 +120,15 @@ fn criterion_benchmark(c: &mut criterion::Criterion) {
         });
         #[cfg(feature = "bytecode")]
         {
-            c.bench_function("octree save", |b| {
+            c.bench_function("boxtree save", |b| {
                 b.iter(|| {
-                    tree.save("test_junk_octree").ok().unwrap();
+                    tree.save("test_junk_boxtree").ok().unwrap();
                 });
             });
 
-            c.bench_function("octree load", |b| {
+            c.bench_function("boxtree load", |b| {
                 b.iter(|| {
-                    let _tree_copy = BoxTree::<Albedo>::load("test_junk_octree").ok().unwrap();
+                    let _tree_copy = BoxTree::<Albedo>::load("test_junk_boxtree").ok().unwrap();
                 });
             });
         }

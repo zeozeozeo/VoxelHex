@@ -174,7 +174,7 @@ fn node_stack_last(node_stack_meta: u32) -> u32 { // returns either with index o
     return (node_stack_meta & 0x0000FF00u) >> 8u;
 }
 
-//crate::octree:raytracing::get_dda_scale_factors
+//crate::boxtree:raytracing::get_dda_scale_factors
 fn get_dda_scale_factors(ray: ptr<function, Line>) -> vec3f {
     return vec3f(
         sqrt(
@@ -938,7 +938,7 @@ fn is_empty(e: PaletteIndexValues) -> bool {
 }
 
 const BOXTREE_ROOT_NODE_KEY = 0u;
-struct OctreeMetaData {
+struct BoxtreeMetaData {
     ambient_light_color: vec3f,
     ambient_light_position: vec3f,
     boxtree_size: u32,
@@ -965,7 +965,7 @@ var<storage, read_write> node_requests: array<atomic<u32>>;
 var<uniform> debug_data: u32;
 
 @group(1) @binding(0)
-var<uniform> boxtree_meta_data: OctreeMetaData;
+var<uniform> boxtree_meta_data: BoxtreeMetaData;
 
 @group(1) @binding(1)
 var<storage, read_write> used_bits: array<atomic<u32>>;
@@ -1046,7 +1046,7 @@ fn update(
                 rgb_result.b = 1.;
             }
         }
-        rgb_result.b += 0.1; // Also color in the area of the octree
+        rgb_result.b += 0.1; // Also color in the area of the boxtree
     }
     */// --- DEBUG ---
     textureStore(output_texture, vec2u(invocation_id.xy), vec4f(rgb_result, 1.));

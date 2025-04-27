@@ -1,4 +1,4 @@
-use crate::octree::{
+use crate::boxtree::{
     empty_marker,
     types::{
         Albedo, BrickData, NodeChildren, NodeConnection, NodeContent, PaletteIndexValues, VoxelData,

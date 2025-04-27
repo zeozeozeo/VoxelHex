@@ -1,5 +1,5 @@
 use crate::{
-    octree::{Albedo, BoxTree, BoxTreeEntry, BOX_NODE_CHILDREN_COUNT},
+    boxtree::{Albedo, BoxTree, BoxTreeEntry, BOX_NODE_CHILDREN_COUNT},
     spatial::{lut::SECTANT_OFFSET_LUT, math::vector::V3c},
     voxel_data,
 };
@@ -11,7 +11,7 @@ fn test_simplest_insert_and_get() {
     let mut tree: BoxTree = BoxTree::new(4, 1).ok().unwrap();
     tree.auto_simplify = false;
     tree.insert(&V3c::new(0, 0, 0), &red)
-        .expect("octree insert");
+        .expect("boxtree insert");
 
     assert!(tree.get(&V3c::new(0, 0, 0)) == (&red).into());
 }
@@ -1719,7 +1719,7 @@ fn test_overwrite_whole_nodes_where_dim_is_4() {
 }
 
 #[test]
-fn test_edge_case_octree_set() {
+fn test_edge_case_boxtree_set() {
     const TREE_SIZE: u32 = 16;
     const FILL_RANGE_START: u32 = 6;
     let mut tree: BoxTree = BoxTree::new(TREE_SIZE, 1).ok().unwrap();

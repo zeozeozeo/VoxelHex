@@ -1,5 +1,5 @@
 use crate::{
-    octree::{
+    boxtree::{
         types::{MIPMapStrategy, OctreeError},
         Albedo, BoxTree, BoxTreeEntry, V3c, VoxelData,
     },
@@ -229,24 +229,24 @@ impl MIPMapStrategy {
             .ceil() as u32;
         let tree_size = 4_u32.pow(tree_size) * brick_dimension;
 
-        let mut shocovox_octree =
+        let mut shocovox_boxtree =
             BoxTree::<T>::new(tree_size, brick_dimension).unwrap_or_else(|err| {
                 panic!(
-                    "Expected to build a valid octree with dimension {:?} and brick dimension {:?}; Instead: {:?}",
+                    "Expected to build a valid boxtree with dimension {:?} and brick dimension {:?}; Instead: {:?}",
                     tree_size,
                     brick_dimension,
                     err
                 )
             });
 
-        shocovox_octree.mip_map_strategy.enabled = self.enabled;
-        shocovox_octree.mip_map_strategy.resampling_methods = self.resampling_methods.clone();
-        shocovox_octree
+        shocovox_boxtree.mip_map_strategy.enabled = self.enabled;
+        shocovox_boxtree.mip_map_strategy.resampling_methods = self.resampling_methods.clone();
+        shocovox_boxtree
             .mip_map_strategy
             .resampling_color_matching_thresholds =
             self.resampling_color_matching_thresholds.clone();
-        shocovox_octree.load_vox_data_internal(&vox_data, &min_position);
-        Ok(shocovox_octree)
+        shocovox_boxtree.load_vox_data_internal(&vox_data, &min_position);
+        Ok(shocovox_boxtree)
     }
 }
 
@@ -274,18 +274,18 @@ impl<
             .ceil() as u32;
         let tree_size = 4_u32.pow(tree_size) * brick_dimension;
 
-        let mut shocovox_octree =
+        let mut shocovox_boxtree =
             BoxTree::<T>::new(tree_size, brick_dimension).unwrap_or_else(|err| {
                 panic!(
-                    "Expected to build a valid octree with dimension {:?} and brick dimension {:?}; Instead: {:?}",
+                    "Expected to build a valid boxtree with dimension {:?} and brick dimension {:?}; Instead: {:?}",
                     tree_size,
                     brick_dimension.to_owned(),
                     err
                 )
             });
 
-        shocovox_octree.load_vox_data_internal(&vox_data, &min_position);
-        Ok(shocovox_octree)
+        shocovox_boxtree.load_vox_data_internal(&vox_data, &min_position);
+        Ok(shocovox_boxtree)
     }
 
     /// Loads data from the given filename
@@ -375,14 +375,14 @@ impl<
                     BoxTreeEntry::Visual(&(vox_tree.palette[voxel.i as usize].into())),
                 ) {
                     Ok(_) => {}
-                    Err(octree_error) => match octree_error {
+                    Err(boxtree_error) => match boxtree_error {
                         OctreeError::InvalidPosition { .. } => {
                             panic!(
-                                "inserting into octree at at invalid position: {:?}",
-                                octree_error
+                                "inserting into boxtree at at invalid position: {:?}",
+                                boxtree_error
                             )
                         }
-                        _ => panic!("inserting into octree yielded: {:?}", octree_error),
+                        _ => panic!("inserting into boxtree yielded: {:?}", boxtree_error),
                     },
                 }
             }
@@ -396,7 +396,7 @@ impl<
 }
 
 #[cfg(test)]
-mod octree_tests {
+mod boxtree_tests {
     use super::parse_rotation_matrix;
     use nalgebra::Matrix3;
 

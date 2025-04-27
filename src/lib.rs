@@ -1,7 +1,7 @@
 mod object_pool;
 mod spatial;
 
-pub mod octree;
+pub mod boxtree;
 
 #[cfg(any(
     feature = "bytecode",

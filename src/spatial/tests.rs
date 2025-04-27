@@ -16,7 +16,7 @@ mod vector_tests {
 
 #[cfg(test)]
 mod detail_tests {
-    use crate::octree::V3c;
+    use crate::boxtree::V3c;
     use crate::spatial::{update_size_within, Cube};
 
     #[test]
@@ -36,24 +36,24 @@ mod detail_tests {
 
 #[cfg(test)]
 mod sectant_tests {
-    use crate::spatial::math::hash_region;
+    use crate::spatial::math::offset_sectant;
     use crate::spatial::V3c;
 
     #[test]
     fn test_hash_region() {
-        assert_eq!(hash_region(&V3c::new(0.0, 0.0, 0.0), 12.0), 0);
-        assert_eq!(hash_region(&V3c::new(3.0, 0.0, 0.0), 12.0), 1);
-        assert_eq!(hash_region(&V3c::new(0.0, 3.0, 0.0), 12.0), 4);
-        assert_eq!(hash_region(&V3c::new(0.0, 0.0, 3.0), 12.0), 16);
-        assert_eq!(hash_region(&V3c::new(10.0, 10.0, 10.0), 12.0), 63);
+        assert_eq!(offset_sectant(&V3c::new(0.0, 0.0, 0.0), 12.0), 0);
+        assert_eq!(offset_sectant(&V3c::new(3.0, 0.0, 0.0), 12.0), 1);
+        assert_eq!(offset_sectant(&V3c::new(0.0, 3.0, 0.0), 12.0), 4);
+        assert_eq!(offset_sectant(&V3c::new(0.0, 0.0, 3.0), 12.0), 16);
+        assert_eq!(offset_sectant(&V3c::new(10.0, 10.0, 10.0), 12.0), 63);
     }
 }
 
 #[cfg(test)]
 mod bitmask_tests {
 
-    use crate::octree::V3c;
-    use crate::spatial::math::{flat_projection, hash_region};
+    use crate::boxtree::V3c;
+    use crate::spatial::math::{flat_projection, offset_sectant};
     use std::collections::HashSet;
 
     #[test]
@@ -84,28 +84,28 @@ mod bitmask_tests {
 
     #[test]
     fn test_bitmap_flat_projection_exact_size_match() {
-        assert_eq!(0, hash_region(&V3c::new(0., 0., 0.), 4.));
-        assert_eq!(32, hash_region(&V3c::new(0., 0., 2.), 4.));
-        assert_eq!(63, hash_region(&V3c::new(3., 3., 3.), 4.));
+        assert_eq!(0, offset_sectant(&V3c::new(0., 0., 0.), 4.));
+        assert_eq!(32, offset_sectant(&V3c::new(0., 0., 2.), 4.));
+        assert_eq!(63, offset_sectant(&V3c::new(3., 3., 3.), 4.));
     }
 
     #[test]
     fn test_bitmap_flat_projection_greater_dimension() {
-        assert_eq!(0, hash_region(&V3c::new(0., 0., 0.), 10.));
-        assert_eq!(32, hash_region(&V3c::new(0., 0., 5.), 10.));
-        assert_eq!(42, hash_region(&V3c::new(5., 5., 5.), 10.));
-        assert_eq!(63, hash_region(&V3c::new(9., 9., 9.), 10.));
+        assert_eq!(0, offset_sectant(&V3c::new(0., 0., 0.), 10.));
+        assert_eq!(32, offset_sectant(&V3c::new(0., 0., 5.), 10.));
+        assert_eq!(42, offset_sectant(&V3c::new(5., 5., 5.), 10.));
+        assert_eq!(63, offset_sectant(&V3c::new(9., 9., 9.), 10.));
     }
 
     #[test]
     fn test_bitmap_flat_projection_smaller_dimension() {
-        assert_eq!(0, hash_region(&V3c::new(0., 0., 0.), 2.));
-        assert_eq!(2, hash_region(&V3c::new(1., 0., 0.), 2.));
-        assert_eq!(8, hash_region(&V3c::new(0., 1., 0.), 2.));
-        assert_eq!(10, hash_region(&V3c::new(1., 1., 0.), 2.));
-        assert_eq!(32, hash_region(&V3c::new(0., 0., 1.), 2.));
-        assert_eq!(34, hash_region(&V3c::new(1., 0., 1.), 2.));
-        assert_eq!(40, hash_region(&V3c::new(0., 1., 1.), 2.));
-        assert_eq!(42, hash_region(&V3c::new(1., 1., 1.), 2.));
+        assert_eq!(0, offset_sectant(&V3c::new(0., 0., 0.), 2.));
+        assert_eq!(2, offset_sectant(&V3c::new(1., 0., 0.), 2.));
+        assert_eq!(8, offset_sectant(&V3c::new(0., 1., 0.), 2.));
+        assert_eq!(10, offset_sectant(&V3c::new(1., 1., 0.), 2.));
+        assert_eq!(32, offset_sectant(&V3c::new(0., 0., 1.), 2.));
+        assert_eq!(34, offset_sectant(&V3c::new(1., 0., 1.), 2.));
+        assert_eq!(40, offset_sectant(&V3c::new(0., 1., 1.), 2.));
+        assert_eq!(42, offset_sectant(&V3c::new(1., 1., 1.), 2.));
     }
 }

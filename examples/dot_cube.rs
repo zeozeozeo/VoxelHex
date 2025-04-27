@@ -12,9 +12,9 @@ use iyes_perf_ui::{
 };
 
 #[cfg(feature = "bevy_wgpu")]
-use shocovox_rs::{
-    octree::{Albedo, BoxTree, BoxTreeEntry, V3c, V3cf32},
-    raytracing::{OctreeGPUHost, Ray, SvxViewSet, Viewport},
+use voxelhex::{
+    boxtree::{Albedo, BoxTree, BoxTreeEntry, V3c, V3cf32},
+    raytracing::{BoxTreeGPUHost, Ray, VhxViewSet, Viewport},
 };
 
 #[cfg(feature = "bevy_wgpu")]
@@ -24,7 +24,7 @@ const DISPLAY_RESOLUTION: [u32; 2] = [1024, 768];
 const BRICK_DIMENSION: u32 = 32;
 
 #[cfg(feature = "bevy_wgpu")]
-const TREE_SIZE: u32 = 256;
+const TREE_SIZE: u32 = 128;
 
 #[cfg(feature = "bevy_wgpu")]
 fn main() {
@@ -32,7 +32,7 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         .add_plugins((
             DefaultPlugins.set(WindowPlugin::default()),
-            shocovox_rs::raytracing::RenderBevyPlugin::<u32>::new(),
+            voxelhex::raytracing::RenderBevyPlugin::<u32>::new(),
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
             PanOrbitCameraPlugin,
             PerfUiPlugin,
@@ -51,8 +51,8 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
         TREE_SIZE as f32 * -2.,
     );
 
-    // fill octree with data
-    let mut tree: BoxTree = shocovox_rs::octree::BoxTree::new(TREE_SIZE, BRICK_DIMENSION)
+    // fill boxtree with data
+    let mut tree: BoxTree = voxelhex::boxtree::BoxTree::new(TREE_SIZE, BRICK_DIMENSION)
         .ok()
         .unwrap();
 
@@ -103,8 +103,8 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
         }
     }
 
-    let mut host = OctreeGPUHost { tree };
-    let mut views = SvxViewSet::default();
+    let mut host = BoxTreeGPUHost { tree };
+    let mut views = VhxViewSet::default();
     let view_index = host.create_new_view(
         &mut views,
         50,
@@ -176,7 +176,7 @@ fn direction_from_cam(cam: &PanOrbitCamera) -> Option<V3cf32> {
 }
 
 #[cfg(feature = "bevy_wgpu")]
-fn set_viewport_for_camera(camera_query: Query<&mut PanOrbitCamera>, view_set: ResMut<SvxViewSet>) {
+fn set_viewport_for_camera(camera_query: Query<&mut PanOrbitCamera>, view_set: ResMut<VhxViewSet>) {
     let cam = camera_query.single();
     if let Some(_) = cam.radius {
         let mut tree_view = view_set.views[0].lock().unwrap();
@@ -188,8 +188,8 @@ fn set_viewport_for_camera(camera_query: Query<&mut PanOrbitCamera>, view_set: R
 #[cfg(feature = "bevy_wgpu")]
 fn handle_zoom(
     keys: Res<ButtonInput<KeyCode>>,
-    tree: ResMut<OctreeGPUHost>,
-    view_set: ResMut<SvxViewSet>,
+    tree: ResMut<BoxTreeGPUHost>,
+    view_set: ResMut<VhxViewSet>,
     mut camera_query: Query<&mut PanOrbitCamera>,
 ) {
     let mut tree_view = view_set.views[0].lock().unwrap();

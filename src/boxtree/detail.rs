@@ -1,12 +1,12 @@
 use crate::{
-    object_pool::empty_marker,
-    octree::{
+    boxtree::{
         types::{Albedo, BoxTree, NodeChildren, NodeContent, PaletteIndexValues, VoxelData},
         BrickData, Cube, V3c, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
+    object_pool::empty_marker,
     spatial::{
         lut::SECTANT_OFFSET_LUT,
-        math::{flat_projection, hash_region},
+        math::{flat_projection, offset_sectant},
     },
 };
 use bendy::{decoding::FromBencode, encoding::ToBencode};
@@ -24,7 +24,7 @@ pub(crate) fn child_sectant_for(bounds: &Cube, position: &V3c<f32>) -> u8 {
         position,
         bounds
     );
-    hash_region(&(*position - bounds.min_position), bounds.size)
+    offset_sectant(&(*position - bounds.min_position), bounds.size)
 }
 
 impl<T: Zero + PartialEq> VoxelData for T {

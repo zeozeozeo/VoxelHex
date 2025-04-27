@@ -1,5 +1,5 @@
 use crate::{
-    octree::V3c,
+    boxtree::V3c,
     spatial::{
         math::FLOAT_ERROR_TOLERANCE,
         raytracing::{plane_line_intersection, Ray},
@@ -73,9 +73,9 @@ mod wgpu_tests {
 }
 
 #[cfg(test)]
-mod octree_raytracing_tests {
+mod boxtree_raytracing_tests {
     use crate::{
-        octree::{Albedo, BoxTree, BoxTreeEntry, V3c},
+        boxtree::{Albedo, BoxTree, BoxTreeEntry, V3c},
         raytracing::tests::get_step_to_next_sibling,
         spatial::{math::FLOAT_ERROR_TOLERANCE, raytracing::Ray, Cube},
         voxel_data,
@@ -354,7 +354,7 @@ mod octree_raytracing_tests {
     }
 
     #[test]
-    fn test_edge_case_ray_behind_octree() {
+    fn test_edge_case_ray_behind_boxtree() {
         let mut tree: BoxTree = BoxTree::new(4, 1).ok().unwrap();
         tree.insert(&V3c::new(0, 3, 0), voxel_data!(&5))
             .ok()
@@ -811,7 +811,7 @@ mod octree_raytracing_tests {
 
 #[cfg(test)]
 mod node_stack_tests {
-    use crate::raytracing::raytracing_on_cpu::NodeStack;
+    use crate::raytracing::cpu::NodeStack;
 
     #[test]
     fn test_stack_is_empty() {

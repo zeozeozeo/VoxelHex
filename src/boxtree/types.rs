@@ -1,13 +1,13 @@
-use crate::{object_pool::ObjectPool, octree::BOX_NODE_CHILDREN_COUNT};
+use crate::{boxtree::BOX_NODE_CHILDREN_COUNT, object_pool::ObjectPool};
 use std::{collections::HashMap, error::Error, hash::Hash};
 
 #[cfg(feature = "serialization")]
 use serde::{Deserialize, Serialize};
 
-/// error types during usage or creation of the octree
+/// error types during usage or creation of the boxtree
 #[derive(Debug)]
 pub enum OctreeError {
-    /// Octree creation was attempted with an invalid octree size
+    /// Octree creation was attempted with an invalid boxtree size
     InvalidSize(u32),
 
     /// Octree creation was attempted with an invalid brick dimension
@@ -22,16 +22,16 @@ pub enum OctreeError {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BoxTreeEntry<'a, T: VoxelData> {
-    /// No information available in octree query
+    /// No information available in boxtree query
     Empty,
 
-    /// Albedo data is available in octree query
+    /// Albedo data is available in boxtree query
     Visual(&'a Albedo),
 
-    /// User data is avaliable in octree query
+    /// User data is avaliable in boxtree query
     Informative(&'a T),
 
-    /// Both user data and color information is available in octree query
+    /// Both user data and color information is available in boxtree query
     Complex(&'a Albedo, &'a T),
 }
 
@@ -143,7 +143,7 @@ pub struct StrategyUpdater<'a, T: Default + Clone + Eq + Hash>(pub(crate) &'a mu
 
 /// Configuration object for storing MIP map strategy
 /// Don't forget to @recalculate_mip after you've enabled it, as it is
-/// only updated on octree updates otherwise.
+/// only updated on boxtree updates otherwise.
 /// Activating MIP maps will require a larger GPU view (see @OctreeGPUHost::create_new_view)
 /// As the MIP bricks will take space from other bricks.
 #[derive(Clone)]
@@ -161,7 +161,7 @@ pub struct MIPMapStrategy {
 
 /// Sparse 64Tree of Voxel Bricks, where each leaf node contains a brick of voxels.
 /// A Brick is a 3 dimensional matrix, each element of it containing a voxel.
-/// A Brick can be indexed directly, as opposed to the octree which is essentially a
+/// A Brick can be indexed directly, as opposed to the boxtree which is essentially a
 /// tree-graph where each node has 64 children.
 #[cfg_attr(feature = "serialization", derive(Serialize))]
 #[derive(Clone)]
@@ -172,7 +172,7 @@ where
     /// Size of one brick in a leaf node (dim^3)
     pub(crate) brick_dim: u32,
 
-    /// Extent of the octree
+    /// Extent of the boxtree
     pub(crate) boxtree_size: u32,
 
     /// Storing data at each position through palette index values
@@ -184,7 +184,7 @@ where
     /// Brick data for each node containing a simplified representation, or all empties if the feature is disabled
     pub(crate) node_mips: Vec<BrickData<PaletteIndexValues>>,
 
-    /// The albedo colors used by the octree. Maximum 65535 colors can be used at once
+    /// The albedo colors used by the boxtree. Maximum 65535 colors can be used at once
     /// because of a limitation on GPU raytracing, to spare space index values refering the palettes
     /// are stored on 2 Bytes
     pub(crate) voxel_color_palette: Vec<Albedo>, // referenced by @nodes
@@ -198,7 +198,7 @@ where
     #[cfg_attr(feature = "serialization", serde(skip_serializing, skip_deserializing))]
     pub(crate) map_to_data_index_in_palette: HashMap<T, usize>,
 
-    /// Feature flag to enable/disable simplification attempts during octree update operations
+    /// Feature flag to enable/disable simplification attempts during boxtree update operations
     pub auto_simplify: bool,
 
     /// The stored MIP map strategy

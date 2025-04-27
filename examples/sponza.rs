@@ -5,9 +5,9 @@ use bevy::{prelude::*, window::WindowPlugin};
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
 #[cfg(feature = "bevy_wgpu")]
-use shocovox_rs::{
-    octree::{BoxTree, V3c, V3cf32},
-    raytracing::{OctreeGPUHost, Ray, SvxViewSet, Viewport},
+use voxelhex::{
+    boxtree::{BoxTree, V3c, V3cf32},
+    raytracing::{BoxTreeGPUHost, Ray, VhxViewSet, Viewport},
 };
 
 #[cfg(feature = "bevy_wgpu")]
@@ -16,6 +16,9 @@ use iyes_perf_ui::{
     ui::root::PerfUiRoot,
     PerfUiPlugin,
 };
+
+#[cfg(feature = "bevy_wgpu")]
+use image::{ImageBuffer, Rgb};
 
 #[cfg(feature = "bevy_wgpu")]
 const DISPLAY_RESOLUTION: [u32; 2] = [1024, 768];
@@ -36,7 +39,7 @@ fn main() {
                 }),
                 ..default()
             }),
-            shocovox_rs::raytracing::RenderBevyPlugin::<u32>::new(),
+            voxelhex::raytracing::RenderBevyPlugin::<u32>::new(),
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
             PanOrbitCameraPlugin,
             PerfUiPlugin,
@@ -49,13 +52,13 @@ fn main() {
 
 #[cfg(feature = "bevy_wgpu")]
 fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
-    // fill octree with data
+    // fill boxtree with data
     let mut tree: BoxTree;
     let tree_path = "example_junk_sponza";
     if std::path::Path::new(tree_path).exists() {
         tree = BoxTree::load(&tree_path).ok().unwrap();
     } else {
-        tree = match shocovox_rs::octree::BoxTree::load_vox_file(
+        tree = match voxelhex::boxtree::BoxTree::load_vox_file(
             "assets/models/sponza.vox",
             BRICK_DIMENSION,
         ) {
@@ -67,8 +70,8 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
         tree.save(&tree_path).ok().unwrap();
     }
 
-    let mut host = OctreeGPUHost { tree };
-    let mut views = SvxViewSet::default();
+    let mut host = BoxTreeGPUHost { tree };
+    let mut views = VhxViewSet::default();
     let view_index = host.create_new_view(
         &mut views,
         40,
@@ -147,7 +150,7 @@ fn direction_from_cam(cam: &PanOrbitCamera) -> Option<V3cf32> {
 }
 
 #[cfg(feature = "bevy_wgpu")]
-fn set_viewport_for_camera(camera_query: Query<&mut PanOrbitCamera>, view_set: ResMut<SvxViewSet>) {
+fn set_viewport_for_camera(camera_query: Query<&mut PanOrbitCamera>, view_set: ResMut<VhxViewSet>) {
     let cam = camera_query.single();
     if let Some(_) = cam.radius {
         let mut tree_view = view_set.views[0].lock().unwrap();
@@ -159,8 +162,8 @@ fn set_viewport_for_camera(camera_query: Query<&mut PanOrbitCamera>, view_set: R
 #[cfg(feature = "bevy_wgpu")]
 fn handle_zoom(
     keys: Res<ButtonInput<KeyCode>>,
-    tree: ResMut<OctreeGPUHost>,
-    view_set: ResMut<SvxViewSet>,
+    tree: ResMut<BoxTreeGPUHost>,
+    view_set: ResMut<VhxViewSet>,
     mut camera_query: Query<&mut PanOrbitCamera>,
 ) {
     let mut tree_view = view_set.views[0].lock().unwrap();
@@ -182,11 +185,7 @@ fn handle_zoom(
 
         // define light
         let diffuse_light_normal = V3c::new(0., -1., 1.).normalized();
-
-        use image::ImageBuffer;
-        use image::Rgb;
         let mut img = ImageBuffer::new(DISPLAY_RESOLUTION[0], DISPLAY_RESOLUTION[1]);
-
         // cast each ray for a hit
         for x in 0..DISPLAY_RESOLUTION[0] {
             for y in 0..DISPLAY_RESOLUTION[1] {

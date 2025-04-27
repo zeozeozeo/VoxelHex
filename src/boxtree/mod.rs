@@ -14,11 +14,11 @@ pub use types::{
 };
 
 use crate::{
-    object_pool::{empty_marker, ObjectPool},
-    octree::{
+    boxtree::{
         detail::child_sectant_for,
         types::{BrickData, NodeChildren, NodeContent, OctreeError, PaletteIndexValues},
     },
+    object_pool::{empty_marker, ObjectPool},
     spatial::{
         math::{flat_projection, matrix_index_for},
         Cube,
@@ -59,10 +59,10 @@ impl<'a, T: VoxelData> From<(&'a Albedo, &'a T)> for BoxTreeEntry<'a, T> {
 #[macro_export]
 macro_rules! voxel_data {
     ($data:expr) => {
-        OctreeEntry::Informative($data)
+        BoxTreeEntry::Informative($data)
     };
     () => {
-        OctreeEntry::Empty
+        BoxTreeEntry::Empty
     };
 }
 
@@ -168,8 +168,8 @@ impl<
         Ok(Self::from_bytes(bytes))
     }
 
-    /// creates an octree with the given size
-    /// * `brick_dimension` - must be one of `(2^x)` and smaller than the size of the octree
+    /// creates an boxtree with the given size
+    /// * `brick_dimension` - must be one of `(2^x)` and smaller than the size of the boxtree
     /// * `size` - must be `brick_dimension * (4^x)`, e.g: brick_dimension == 2 --> size can be 8,32,128...
     pub fn new(size: u32, brick_dimension: u32) -> Result<Self, OctreeError> {
         if 0 == size || (brick_dimension as f32).log(2.0).fract() != 0.0 {
@@ -205,7 +205,7 @@ impl<
         })
     }
 
-    /// Getter function for the octree
+    /// Getter function for the boxtree
     /// * Returns immutable reference to the data at the given position, if there is any
     pub fn get(&self, position: &V3c<u32>) -> BoxTreeEntry<T> {
         NodeContent::pix_get_ref(
@@ -219,7 +219,7 @@ impl<
         )
     }
 
-    /// Internal Getter function for the octree, to be able to call get from within the tree itself
+    /// Internal Getter function for the boxtree, to be able to call get from within the tree itself
     /// * Returns immutable reference to the data of the given node at the given position, if there is any
     fn get_internal(
         &self,
@@ -236,7 +236,7 @@ impl<
             match self.nodes.get(current_node_key) {
                 NodeContent::Nothing => return empty_marker(),
                 NodeContent::Leaf(bricks) => {
-                    // In case brick_dimension == octree size, the root node can not be a leaf...
+                    // In case brick_dimension == boxtree size, the root node can not be a leaf...
                     debug_assert!(self.brick_dim < self.boxtree_size);
 
                     // Hash the position to the target child
@@ -325,12 +325,12 @@ impl<
         }
     }
 
-    /// Tells the radius of the area covered by the octree
+    /// Tells the radius of the area covered by the boxtree
     pub fn get_size(&self) -> u32 {
         self.boxtree_size
     }
 
-    /// Object to set the MIP map strategy for each MIP level inside the octree
+    /// Object to set the MIP map strategy for each MIP level inside the boxtree
     pub fn albedo_mip_map_resampling_strategy(&mut self) -> StrategyUpdater<T> {
         StrategyUpdater(self)
     }

@@ -1,11 +1,11 @@
 use crate::{
-    octree::{
+    boxtree::{
         types::{BrickData, NodeChildren, NodeContent, PaletteIndexValues},
         BoxTree, BoxTreeEntry, V3c, VoxelData, BOX_NODE_DIMENSION, OOB_SECTANT,
     },
     spatial::{
         lut::RAY_TO_NODE_OCCUPANCY_BITMASK_LUT,
-        math::{flat_projection, hash_direction, hash_region},
+        math::{flat_projection, hash_direction, offset_sectant},
         raytracing::{cube_impact_normal, step_sectant, Ray},
         Cube,
     },
@@ -336,10 +336,10 @@ impl<
         let (mut ray_current_point, mut target_sectant, mut target_bounds) =
             if let Some(root_hit) = current_bounds.intersect_ray(ray) {
                 let ray_current_point = ray.point_at(root_hit.impact_distance.unwrap_or(0.));
-                let target_sectant = hash_region(&ray_current_point, current_bounds.size);
+                let target_sectant = offset_sectant(&ray_current_point, current_bounds.size);
                 (
                     ray_current_point,
-                    hash_region(&ray_current_point, current_bounds.size),
+                    offset_sectant(&ray_current_point, current_bounds.size),
                     current_bounds.child_bounds_for(target_sectant),
                 )
             } else {
@@ -438,7 +438,7 @@ impl<
                         .min_position
                         .clone()
                         .modulo(&current_bounds.size);
-                    target_sectant = hash_region(
+                    target_sectant = offset_sectant(
                         &(target_bounds.min_position + V3c::unit(target_bounds.size / 2.)
                             - current_bounds.min_position),
                         current_bounds.size,
@@ -466,7 +466,7 @@ impl<
                         self.node_children[current_node_key].child(target_sectant) as u32;
                     current_node_key = target_child_key as usize;
                     current_bounds = target_bounds;
-                    target_sectant = hash_region(
+                    target_sectant = offset_sectant(
                         &(ray_current_point - target_bounds.min_position),
                         target_bounds.size,
                     );
@@ -514,7 +514,7 @@ impl<
                 && ray_current_point.y > 0.
                 && ray_current_point.z > 0.
             {
-                hash_region(&ray_current_point, self.boxtree_size as f32)
+                offset_sectant(&ray_current_point, self.boxtree_size as f32)
             } else {
                 OOB_SECTANT
             };

@@ -1,10 +1,10 @@
 use crate::{
-    object_pool::empty_marker,
-    octree::{
+    boxtree::{
         detail::child_sectant_for,
         types::{BrickData, NodeChildren, NodeContent, OctreeError, PaletteIndexValues},
         BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
+    object_pool::empty_marker,
     spatial::{
         math::{flat_projection, vector::V3c},
         Cube,
