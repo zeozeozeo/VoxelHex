@@ -64,10 +64,10 @@ pub struct Viewport {
     /// * `x` - looking glass width
     /// * `y` - looking glass height
     /// * `z` - the max depth of the viewport
-    pub frustum: V3cf32,
+    pub(crate) frustum: V3cf32,
 
     /// Field of View: how scattered will the rays in the viewport are
-    pub fov: f32,
+    pub(crate) fov: f32,
 }
 
 pub struct RenderBevyPlugin<T = u32>
@@ -94,11 +94,21 @@ pub struct VhxViewSet {
 }
 
 /// The Camera responsible for storing frustum and view related data
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BoxTreeSpyGlass {
+    // The texture used to store depth information in the scene
+    pub(crate) depth_texture: Handle<Image>,
+
+    /// The currently used output texture
     pub(crate) output_texture: Handle<Image>,
+
+    // Set to true, if the viewport changed
     pub(crate) viewport_changed: bool,
+
+    // The viewport containing display information
     pub(crate) viewport: Viewport,
+
+    // The nodes requested by the raytracing algorithm to be displayed
     pub(crate) node_requests: Vec<u32>,
 }
 
@@ -110,6 +120,9 @@ pub struct BoxTreeGPUView {
 
     /// Set to true if the view needs to be reloaded
     pub(crate) reload: bool,
+
+    /// Set to true if the view needs to be refreshed, e.g. by a resolution change
+    pub(crate) rebuild: bool,
 
     /// True if the initial data already sent to GPU
     pub init_data_sent: bool,
@@ -123,11 +136,11 @@ pub struct BoxTreeGPUView {
     /// The currently used resolution the raycasting dimensions are based for the base ray
     pub(crate) resolution: [u32; 2],
 
-    /// The currently used output texture
-    pub(crate) output_texture: Handle<Image>,
-
-    /// The new resolution to be set ASAP if any
+    /// The new resolution to be set if any
     pub(crate) new_resolution: Option<[u32; 2]>,
+
+    /// The new depth texture to be used, if any
+    pub(crate) new_depth_texture: Option<Handle<Image>>,
 
     /// The new output texture to be used, if any
     pub(crate) new_output_texture: Option<Handle<Image>>,

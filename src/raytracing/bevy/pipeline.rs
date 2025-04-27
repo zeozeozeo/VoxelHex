@@ -75,6 +75,16 @@ impl FromWorld for VhxRenderPipeline {
                 },
                 BindGroupLayoutEntry {
                     binding: 1u32,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        format: TextureFormat::R32Float,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2u32,
                     visibility: ShaderStages::all(),
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
@@ -84,7 +94,7 @@ impl FromWorld for VhxRenderPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 2u32,
+                    binding: 3u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: false },
@@ -247,6 +257,8 @@ impl render_graph::Node for VhxRenderNode {
             let command_encoder = render_context.command_encoder();
             let data_handler = &current_view.data_handler;
             if !current_view.data_ready {
+                // The first byte of metadata is used to monitor if the GPU has init data uploaded.
+                // Until state is set on host, just copy data to the readable buffer.
                 command_encoder.copy_buffer_to_buffer(
                     &resources.node_metadata_buffer,
                     0,
@@ -365,17 +377,26 @@ pub(crate) fn create_spyglass_bind_group(
                     binding: 0,
                     resource: BindingResource::TextureView(
                         &gpu_images
-                            .get(&tree_view.output_texture)
+                            .get(&tree_view.spyglass.output_texture)
                             .unwrap()
                             .texture_view,
                     ),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: viewport_buffer.as_entire_binding(),
+                    resource: BindingResource::TextureView(
+                        &gpu_images
+                            .get(&tree_view.spyglass.depth_texture)
+                            .unwrap()
+                            .texture_view,
+                    ),
                 },
                 BindGroupEntry {
                     binding: 2,
+                    resource: viewport_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 3,
                     resource: node_requests_buffer.as_entire_binding(),
                 },
             ],
@@ -598,49 +619,51 @@ pub(crate) fn prepare_bind_groups(
     mut pipeline: ResMut<VhxRenderPipeline>,
     mut vhx_view_set: ResMut<VhxViewSet>,
 ) {
-    {
-        // Handle when no udpates are needed
-        let view = vhx_view_set.views[0].lock().unwrap();
-        // No need to update view if
-        if view.spyglass.output_texture == view.output_texture // output texture stored in CPU matches with the one used in the GPU bind group
-            && (view.new_resolution.is_some() // a new resolution is requested and the texture is pending still
-                || (vhx_view_set.resources[0].is_some() && !pipeline.update_tree))
-        // or tree is up-todate
-        {
-            return;
-        }
+    if !vhx_view_set.views[0].lock().unwrap().rebuild && !pipeline.update_tree {
+        return;
     }
-    {
-        // Rebuild view becasue of changed output texture ( most likely resolution change )
-        let output_texture_changed = {
-            let view = vhx_view_set.views[0].lock().unwrap();
-            vhx_view_set.resources[0].is_some()
-                && view.spyglass.output_texture != view.output_texture
-                && gpu_images.get(&view.output_texture).is_some()
-        };
-        if output_texture_changed {
-            let (
-                spyglass_bind_group,
-                viewport_buffer,
-                node_requests_buffer,
-                readable_node_requests_buffer,
-            ) = create_spyglass_bind_group(
-                &mut pipeline,
-                &render_device,
-                &gpu_images,
-                &vhx_view_set.views[0].lock().unwrap(),
-            );
 
-            let view_resources = vhx_view_set.resources[0].as_mut().unwrap();
-            view_resources.spyglass_bind_group = spyglass_bind_group;
-            view_resources.viewport_buffer = viewport_buffer;
-            view_resources.node_requests_buffer = node_requests_buffer;
-            view_resources.readable_node_requests_buffer = readable_node_requests_buffer;
+    // Rebuild view for texture updates
+    let can_rebuild = {
+        let view = vhx_view_set.views[0].lock().unwrap();
+        view.rebuild
+            && view.new_output_texture.is_some()
+            && gpu_images
+                .get(view.new_output_texture.as_ref().unwrap())
+                .is_some()
+            && view.spyglass.output_texture == *view.new_output_texture.as_ref().unwrap()
+            && view.new_depth_texture.is_some()
+            && gpu_images
+                .get(view.new_depth_texture.as_ref().unwrap())
+                .is_some()
+            && view.spyglass.depth_texture == *view.new_depth_texture.as_ref().unwrap()
+    };
 
-            // update spyglass output texture too!
-            let mut view = vhx_view_set.views[0].lock().unwrap();
-            view.spyglass.output_texture = view.output_texture.clone();
-        }
+    if can_rebuild {
+        let (
+            spyglass_bind_group,
+            viewport_buffer,
+            node_requests_buffer,
+            readable_node_requests_buffer,
+        ) = create_spyglass_bind_group(
+            &mut pipeline,
+            &render_device,
+            &gpu_images,
+            &vhx_view_set.views[0].lock().unwrap(),
+        );
+
+        // Update View resources
+        let view_resources = vhx_view_set.resources[0].as_mut().unwrap();
+        view_resources.spyglass_bind_group = spyglass_bind_group;
+        view_resources.viewport_buffer = viewport_buffer;
+        view_resources.node_requests_buffer = node_requests_buffer;
+        view_resources.readable_node_requests_buffer = readable_node_requests_buffer;
+
+        // Update view to clear temporary objects
+        let mut view = vhx_view_set.views[0].lock().unwrap();
+        view.new_output_texture = None;
+        view.new_depth_texture = None;
+        view.rebuild = false;
     }
 
     // build everything from the ground up

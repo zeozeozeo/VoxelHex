@@ -387,7 +387,7 @@ fn traverse_brick(
 struct OctreeRayIntersection {
     hit: bool,
     albedo : vec4<f32>,
-    collision_point: vec3f,
+    impact_point: vec3f,
     impact_normal: vec3f,
 }
 
@@ -728,7 +728,7 @@ fn get_by_ray(ray: ptr<function, Line>) -> OctreeRayIntersection {
                     hit.albedo -= vec4f(missing_data_color, 0.);
 
                     /*// +++ DEBUG +++
-                    let relative_c_point = hit.collision_point - current_bounds.min_position;
+                    let relative_c_point = hit.impact_point - current_bounds.min_position;
                     if (relative_c_point.x < 5. || relative_c_point.y < 5. || relative_c_point.z < 5.) {
                         hit.albedo.b = 1.;
                     }
@@ -956,13 +956,13 @@ struct Viewport {
 var output_texture: texture_storage_2d<rgba8unorm, read_write>;
 
 @group(0) @binding(1)
-var<uniform> viewport: Viewport;
+var depth_texture: texture_storage_2d<rgba8unorm, read_write>;
 
 @group(0) @binding(2)
-var<storage, read_write> node_requests: array<atomic<u32>>;
+var<uniform> viewport: Viewport;
 
 @group(0) @binding(3)
-var<uniform> debug_data: u32;
+var<storage, read_write> node_requests: array<atomic<u32>>;
 
 @group(1) @binding(0)
 var<uniform> boxtree_meta_data: BoxtreeMetaData;
