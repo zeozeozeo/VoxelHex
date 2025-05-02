@@ -1,7 +1,9 @@
 use crate::{
     boxtree::types::PaletteIndexValues,
     raytracing::bevy::types::{
-        BoxTreeGPUView, BoxTreeMetaData, VhxRenderNode, VhxRenderPipeline, Viewport,
+        BoxTreeGPUView, BoxTreeMetaData, BoxTreeRenderDataResources, RenderStageData,
+        VhxRenderNode, VhxRenderPipeline, VhxViewSet, Viewport, VHX_PREPASS_STAGE_ID,
+        VHX_RENDER_STAGE_ID,
     },
 };
 use bevy::{
@@ -10,7 +12,7 @@ use bevy::{
         system::{Res, ResMut},
         world::{FromWorld, World},
     },
-    prelude::Vec4,
+    math::{UVec2, Vec4},
     render::{
         render_asset::RenderAssets,
         render_graph::{self},
@@ -27,8 +29,6 @@ use bevy::{
     },
 };
 use std::borrow::Cow;
-
-use super::types::{BoxTreeRenderDataResources, VhxViewSet};
 
 impl FromWorld for VhxRenderPipeline {
     //##############################################################################
@@ -60,11 +60,21 @@ impl FromWorld for VhxRenderPipeline {
 
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
-        let spyglass_bind_group_layout = render_device.create_bind_group_layout(
-            "OctreeSpyGlass",
+        let render_stage_bind_group_layout = render_device.create_bind_group_layout(
+            "RenderStageBindGroup",
             &[
                 BindGroupLayoutEntry {
                     binding: 0u32,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(<RenderStageData as ShaderType>::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -74,7 +84,7 @@ impl FromWorld for VhxRenderPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 1u32,
+                    binding: 2u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -83,9 +93,14 @@ impl FromWorld for VhxRenderPipeline {
                     },
                     count: None,
                 },
+            ],
+        );
+        let spyglass_bind_group_layout = render_device.create_bind_group_layout(
+            "BoxTreeSpyGlass",
+            &[
                 BindGroupLayoutEntry {
-                    binding: 2u32,
-                    visibility: ShaderStages::all(),
+                    binding: 0u32,
+                    visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -94,7 +109,7 @@ impl FromWorld for VhxRenderPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 3u32,
+                    binding: 1u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: false },
@@ -106,11 +121,11 @@ impl FromWorld for VhxRenderPipeline {
             ],
         );
         let render_data_bind_group_layout = render_device.create_bind_group_layout(
-            "OctreeRenderData",
+            "BoxTreeRenderData",
             &[
                 BindGroupLayoutEntry {
                     binding: 0u32,
-                    visibility: ShaderStages::all(),
+                    visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -132,7 +147,7 @@ impl FromWorld for VhxRenderPipeline {
                     binding: 2u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: Some(<Vec<u32> as ShaderType>::min_size()),
                     },
@@ -142,7 +157,7 @@ impl FromWorld for VhxRenderPipeline {
                     binding: 3u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: Some(<Vec<u32> as ShaderType>::min_size()),
                     },
@@ -152,7 +167,7 @@ impl FromWorld for VhxRenderPipeline {
                     binding: 4u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: Some(<Vec<u32> as ShaderType>::min_size()),
                     },
@@ -162,7 +177,7 @@ impl FromWorld for VhxRenderPipeline {
                     binding: 5u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: Some(<Vec<u32> as ShaderType>::min_size()),
                     },
@@ -172,7 +187,7 @@ impl FromWorld for VhxRenderPipeline {
                     binding: 6u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: Some(<Vec<PaletteIndexValues> as ShaderType>::min_size()),
                     },
@@ -182,7 +197,7 @@ impl FromWorld for VhxRenderPipeline {
                     binding: 7u32,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: Some(<Vec<Vec4> as ShaderType>::min_size()),
                     },
@@ -198,6 +213,7 @@ impl FromWorld for VhxRenderPipeline {
             zero_initialize_workgroup_memory: false,
             label: None,
             layout: vec![
+                render_stage_bind_group_layout.clone(),
                 spyglass_bind_group_layout.clone(),
                 render_data_bind_group_layout.clone(),
             ],
@@ -210,6 +226,7 @@ impl FromWorld for VhxRenderPipeline {
         VhxRenderPipeline {
             render_queue: world.resource::<RenderQueue>().clone(),
             update_tree: true,
+            render_stage_bind_group_layout,
             spyglass_bind_group_layout,
             render_data_bind_group_layout,
             update_pipeline,
@@ -267,16 +284,35 @@ impl render_graph::Node for VhxRenderNode {
                     (std::mem::size_of_val(&data_handler.render_data.node_metadata[0])) as u64,
                 );
             } else {
-                let mut pass =
+                {
+                    let mut prepass =
+                        command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
+
+                    prepass.set_bind_group(0, &resources.render_stage_prepass_bind_group, &[]);
+                    prepass.set_bind_group(1, &resources.spyglass_bind_group, &[]);
+                    prepass.set_bind_group(2, &resources.tree_bind_group, &[]);
+                    let pipeline = pipeline_cache
+                        .get_compute_pipeline(vhx_pipeline.update_pipeline)
+                        .unwrap();
+                    prepass.set_pipeline(pipeline);
+                    prepass.dispatch_workgroups(
+                        (current_view.resolution[0] / 2) / WORKGROUP_SIZE,
+                        (current_view.resolution[1] / 2) / WORKGROUP_SIZE,
+                        1,
+                    );
+                }
+
+                let mut main_pass =
                     command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
 
-                pass.set_bind_group(0, &resources.spyglass_bind_group, &[]);
-                pass.set_bind_group(1, &resources.tree_bind_group, &[]);
+                main_pass.set_bind_group(0, &resources.render_stage_main_bind_group, &[]);
+                main_pass.set_bind_group(1, &resources.spyglass_bind_group, &[]);
+                main_pass.set_bind_group(2, &resources.tree_bind_group, &[]);
                 let pipeline = pipeline_cache
                     .get_compute_pipeline(vhx_pipeline.update_pipeline)
                     .unwrap();
-                pass.set_pipeline(pipeline);
-                pass.dispatch_workgroups(
+                main_pass.set_pipeline(pipeline);
+                main_pass.dispatch_workgroups(
                     current_view.resolution[0] / WORKGROUP_SIZE,
                     current_view.resolution[1] / WORKGROUP_SIZE,
                     1,
@@ -337,7 +373,6 @@ impl render_graph::Node for VhxRenderNode {
 pub(crate) fn create_spyglass_bind_group(
     pipeline: &mut VhxRenderPipeline,
     render_device: &Res<RenderDevice>,
-    gpu_images: &Res<RenderAssets<GpuImage>>,
     tree_view: &BoxTreeGPUView,
 ) -> (BindGroup, Buffer, Buffer, Buffer) {
     let mut buffer = UniformBuffer::new([0u8; Viewport::SHADER_SIZE.get() as usize]);
@@ -375,28 +410,10 @@ pub(crate) fn create_spyglass_bind_group(
             &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(
-                        &gpu_images
-                            .get(&tree_view.spyglass.output_texture)
-                            .unwrap()
-                            .texture_view,
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::TextureView(
-                        &gpu_images
-                            .get(&tree_view.spyglass.depth_texture)
-                            .unwrap()
-                            .texture_view,
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 2,
                     resource: viewport_buffer.as_entire_binding(),
                 },
                 BindGroupEntry {
-                    binding: 3,
+                    binding: 1,
                     resource: node_requests_buffer.as_entire_binding(),
                 },
             ],
@@ -525,7 +542,112 @@ fn create_view_resources(
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
     });
 
-    // Create bind group
+    //##############################################################################
+    //   █████████  ███████████   █████████     █████████  ██████████
+    //  ███░░░░░███░█░░░███░░░█  ███░░░░░███   ███░░░░░███░░███░░░░░█
+    // ░███    ░░░ ░   ░███  ░  ░███    ░███  ███     ░░░  ░███  █ ░
+    // ░░█████████     ░███     ░███████████ ░███          ░██████
+    //  ░░░░░░░░███    ░███     ░███░░░░░███ ░███    █████ ░███░░█
+    //  ███    ░███    ░███     ░███    ░███ ░░███  ░░███  ░███ ░   █
+    // ░░█████████     █████    █████   █████ ░░█████████  ██████████
+    //  ░░░░░░░░░     ░░░░░    ░░░░░   ░░░░░   ░░░░░░░░░  ░░░░░░░░░░
+
+    //    █████████  ███████████      ███████    █████  █████ ███████████   █████████
+    //   ███░░░░░███░░███░░░░░███   ███░░░░░███ ░░███  ░░███ ░░███░░░░░███ ███░░░░░███
+    //  ███     ░░░  ░███    ░███  ███     ░░███ ░███   ░███  ░███    ░███░███    ░░░
+    // ░███          ░██████████  ░███      ░███ ░███   ░███  ░██████████ ░░█████████
+    // ░███    █████ ░███░░░░░███ ░███      ░███ ░███   ░███  ░███░░░░░░   ░░░░░░░░███
+    // ░░███  ░░███  ░███    ░███ ░░███     ███  ░███   ░███  ░███         ███    ░███
+    //  ░░█████████  █████   █████ ░░░███████░   ░░████████   █████       ░░█████████
+    //   ░░░░░░░░░  ░░░░░   ░░░░░    ░░░░░░░      ░░░░░░░░   ░░░░░         ░░░░░░░░░
+    //##############################################################################
+    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+    buffer
+        .write(&RenderStageData {
+            stage: VHX_PREPASS_STAGE_ID,
+            output_resolution: UVec2::new(tree_view.resolution[0] / 2, tree_view.resolution[1] / 2),
+        })
+        .unwrap();
+    let prepass_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("Vhx Prepass stage Buffer"),
+        contents: &buffer.into_inner(),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+    buffer
+        .write(&RenderStageData {
+            stage: VHX_RENDER_STAGE_ID,
+            output_resolution: UVec2::new(tree_view.resolution[0], tree_view.resolution[1]),
+        })
+        .unwrap();
+    let render_stage_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("Vhx Main Render stage Buffer"),
+        contents: &buffer.into_inner(),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let render_stage_prepass_bind_group = render_device.create_bind_group(
+        "Vhx Prepass stage bind group",
+        &pipeline.render_stage_bind_group_layout,
+        &[
+            bevy::render::render_resource::BindGroupEntry {
+                binding: 0,
+                resource: prepass_data_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::TextureView(
+                    &gpu_images
+                        .get(&tree_view.spyglass.output_texture)
+                        .unwrap()
+                        .texture_view,
+                ),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::TextureView(
+                    &gpu_images
+                        .get(&tree_view.spyglass.depth_texture)
+                        .unwrap()
+                        .texture_view,
+                ),
+            },
+        ],
+    );
+
+    let render_stage_main_bind_group = render_device.create_bind_group(
+        "Vhx Main Render stage main bind group",
+        &pipeline.render_stage_bind_group_layout,
+        &[
+            bevy::render::render_resource::BindGroupEntry {
+                binding: 0,
+                resource: render_stage_data_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::TextureView(
+                    &gpu_images
+                        .get(&tree_view.spyglass.output_texture)
+                        .unwrap()
+                        .texture_view,
+                ),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::TextureView(
+                    &gpu_images
+                        .get(&tree_view.spyglass.depth_texture)
+                        .unwrap()
+                        .texture_view,
+                ),
+            },
+        ],
+    );
+
+    let (spyglass_bind_group, viewport_buffer, node_requests_buffer, readable_node_requests_buffer) =
+        create_spyglass_bind_group(pipeline, &render_device, tree_view);
+
     let tree_bind_group = render_device.create_bind_group(
         "BoxTreeRenderData",
         &pipeline.render_data_bind_group_layout,
@@ -565,10 +687,9 @@ fn create_view_resources(
         ],
     );
 
-    let (spyglass_bind_group, viewport_buffer, node_requests_buffer, readable_node_requests_buffer) =
-        create_spyglass_bind_group(pipeline, &render_device, &gpu_images, tree_view);
-
     BoxTreeRenderDataResources {
+        render_stage_prepass_bind_group,
+        render_stage_main_bind_group,
         spyglass_bind_group,
         viewport_buffer,
         node_requests_buffer,
@@ -648,7 +769,6 @@ pub(crate) fn prepare_bind_groups(
         ) = create_spyglass_bind_group(
             &mut pipeline,
             &render_device,
-            &gpu_images,
             &vhx_view_set.views[0].lock().unwrap(),
         );
 

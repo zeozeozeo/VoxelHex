@@ -153,7 +153,7 @@ impl<
             new_depth_texture: None,
             data_handler: gpu_data_handler,
             spyglass: BoxTreeSpyGlass {
-                depth_texture: create_depth_texture(resolution, &viewport, &mut images),
+                depth_texture: create_depth_texture(resolution, &mut images),
                 output_texture,
                 viewport_changed: true,
                 node_requests: vec![empty_marker(); 4],

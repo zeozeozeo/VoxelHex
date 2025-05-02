@@ -2,7 +2,7 @@ use crate::boxtree::{types::PaletteIndexValues, BoxTree, V3cf32, VoxelData};
 use bevy::{
     asset::Handle,
     ecs::system::Resource,
-    math::Vec4,
+    math::{UVec2, Vec4},
     prelude::Image,
     reflect::TypePath,
     render::{
@@ -64,10 +64,10 @@ pub struct Viewport {
     /// * `x` - looking glass width
     /// * `y` - looking glass height
     /// * `z` - the max depth of the viewport
-    pub(crate) frustum: V3cf32,
+    pub frustum: V3cf32,
 
     /// Field of View: how scattered will the rays in the viewport are
-    pub(crate) fov: f32,
+    pub fov: f32,
 }
 
 pub struct RenderBevyPlugin<T = u32>
@@ -174,6 +174,9 @@ pub struct BoxTreeGPUDataHandler {
 
 #[derive(Clone)]
 pub(crate) struct BoxTreeRenderDataResources {
+    pub(crate) render_stage_prepass_bind_group: BindGroup,
+    pub(crate) render_stage_main_bind_group: BindGroup,
+
     // Spyglass group
     // --{
     pub(crate) spyglass_bind_group: BindGroup,
@@ -293,11 +296,21 @@ pub struct BoxTreeRenderData {
     pub(crate) color_palette: Vec<Vec4>,
 }
 
+pub(crate) const VHX_PREPASS_STAGE_ID: u32 = 01;
+pub(crate) const VHX_RENDER_STAGE_ID: u32 = 02;
+
+#[derive(Debug, Clone, Copy, ShaderType)]
+pub(crate) struct RenderStageData {
+    pub(crate) stage: u32,
+    pub(crate) output_resolution: UVec2,
+}
+
 #[derive(Resource)]
 pub(crate) struct VhxRenderPipeline {
     pub update_tree: bool,
     pub(crate) render_queue: RenderQueue,
     pub(crate) update_pipeline: CachedComputePipelineId,
+    pub(crate) render_stage_bind_group_layout: BindGroupLayout,
     pub(crate) spyglass_bind_group_layout: BindGroupLayout,
     pub(crate) render_data_bind_group_layout: BindGroupLayout,
 }

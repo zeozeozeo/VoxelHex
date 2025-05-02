@@ -74,7 +74,7 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
     let mut views = VhxViewSet::default();
     let view_index = host.create_new_view(
         &mut views,
-        40,
+        42,
         Viewport::new(
             V3c {
                 x: 0.,
@@ -86,7 +86,7 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
                 y: 0.,
                 z: -1.,
             },
-            V3c::new(100., 100., 200.),
+            V3c::new(100., 100., 1000.),
             3.,
         ),
         DISPLAY_RESOLUTION,
@@ -164,6 +164,7 @@ fn handle_zoom(
     keys: Res<ButtonInput<KeyCode>>,
     tree: ResMut<BoxTreeGPUHost>,
     view_set: ResMut<VhxViewSet>,
+    mut images: ResMut<Assets<Image>>,
     mut camera_query: Query<&mut PanOrbitCamera>,
     mut sprite_query: Query<&mut Sprite>,
 ) {
@@ -227,10 +228,10 @@ fn handle_zoom(
     }
 
     if keys.pressed(KeyCode::Home) {
-        *tree_view.view_fov_mut() *= 1. + 0.09;
+        tree_view.spyglass.viewport_mut().fov *= 1. + 0.09;
     }
     if keys.pressed(KeyCode::End) {
-        *tree_view.view_fov_mut() *= 1. - 0.09;
+        tree_view.spyglass.viewport_mut().fov *= 1. - 0.09;
     }
 
     let mut cam = camera_query.single_mut();

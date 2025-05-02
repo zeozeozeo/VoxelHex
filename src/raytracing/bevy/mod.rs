@@ -75,11 +75,7 @@ impl BoxTreeGPUView {
         if self.resolution != resolution {
             self.new_resolution = Some(resolution);
             self.new_output_texture = Some(create_output_texture(resolution, images));
-            self.new_depth_texture = Some(create_depth_texture(
-                resolution,
-                &self.spyglass.viewport,
-                images,
-            ));
+            self.new_depth_texture = Some(create_depth_texture(resolution, images));
             self.rebuild = true;
             self.new_output_texture.as_ref().unwrap().clone_weak()
         } else {
@@ -90,32 +86,6 @@ impl BoxTreeGPUView {
     /// Provides currently used resolution for the view
     pub fn resolution(&self) -> [u32; 2] {
         self.resolution
-    }
-
-    /// Provides mutable access to view frustum. Also triggers a view rebuild.
-    pub fn view_frustum_mut(&mut self) -> &mut V3cf32 {
-        self.rebuild = true;
-        &mut self.spyglass.viewport.frustum
-    }
-
-    /// Provides mutable access to view frustum. Also triggers a view rebuild.
-    pub fn view_fov_mut(&mut self) -> &mut f32 {
-        self.rebuild = true;
-        &mut self.spyglass.viewport.fov
-    }
-
-    /// Sets the frustum of the view, also triggers a rebuild.
-    /// Old frustum is used until the new textures are built
-    pub fn set_view_frustum(&mut self, frustum: &V3cf32) {
-        self.spyglass.viewport.frustum = *frustum;
-        self.rebuild = true;
-    }
-
-    /// Sets FOV of the view. Also triggers a rebuild.
-    pub fn set_view_fov(&mut self, fov: f32) {
-        self.spyglass.viewport.fov = fov;
-        self.spyglass.viewport_changed = true;
-        self.rebuild = true;
     }
 }
 
@@ -191,16 +161,12 @@ pub(crate) fn create_output_texture(
 /// Depth texture resolution should cover a single voxel
 pub(crate) fn create_depth_texture(
     resolution: [u32; 2],
-    viewport: &Viewport,
     images: &mut ResMut<Assets<Image>>,
 ) -> Handle<Image> {
-    let pixels_per_voxel =
-        (resolution[0] * resolution[1]) as f32 / (viewport.frustum.x * viewport.frustum.y);
-    let pixel_group_size_per_voxel = pixels_per_voxel.sqrt().floor() as u32;
     let mut depth_texture = Image::new_fill(
         Extent3d {
-            width: resolution[0] / pixel_group_size_per_voxel,
-            height: resolution[1] / pixel_group_size_per_voxel,
+            width: resolution[0] / 2,
+            height: resolution[1] / 2,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,

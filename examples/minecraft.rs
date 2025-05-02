@@ -225,10 +225,10 @@ fn handle_zoom(
     }
 
     if keys.pressed(KeyCode::Home) {
-        *tree_view.view_fov_mut() *= 1. + 0.09;
+        tree_view.spyglass.viewport_mut().fov *= 1. + 0.09;
     }
     if keys.pressed(KeyCode::End) {
-        *tree_view.view_fov_mut() *= 1. - 0.09;
+        tree_view.spyglass.viewport_mut().fov *= 1. - 0.09;
     }
 
     let mut cam = camera_query.single_mut();

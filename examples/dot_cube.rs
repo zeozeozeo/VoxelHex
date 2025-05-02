@@ -258,10 +258,10 @@ fn handle_zoom(
     }
 
     if keys.pressed(KeyCode::Home) {
-        *tree_view.view_fov_mut() *= 1. + 0.00009;
+        tree_view.spyglass.viewport_mut().fov *= 1. + 0.00009;
     }
     if keys.pressed(KeyCode::End) {
-        *tree_view.view_fov_mut() *= 1. - 0.00009;
+        tree_view.spyglass.viewport_mut().fov *= 1. - 0.00009;
     }
 
     const MOVEMENT_MODIF: f32 = 0.75;
@@ -273,10 +273,10 @@ fn handle_zoom(
         cam.target_focus.y -= MOVEMENT_MODIF;
     }
     if keys.pressed(KeyCode::NumpadAdd) {
-        tree_view.view_frustum_mut().z *= 1.01;
+        tree_view.spyglass.viewport_mut().frustum.z *= 1.01;
     }
     if keys.pressed(KeyCode::NumpadSubtract) {
-        tree_view.view_frustum_mut().z *= 0.99;
+        tree_view.spyglass.viewport_mut().frustum.z *= 0.99;
     }
 
     if let Some(_) = cam.radius {
