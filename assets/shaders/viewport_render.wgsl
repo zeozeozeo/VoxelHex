@@ -321,7 +321,7 @@ fn max_distance_of_reliable_hit() -> f32 {
     return(
         viewport.fov
         * f32(stage_data.output_resolution.x * stage_data.output_resolution.y)
-        / (viewport.frustum.x * viewport.frustum.y * sqrt(4.5))
+        / (viewport.frustum.x * viewport.frustum.y * sqrt(8.))
     ) - viewport.fov;
 }
 
@@ -601,7 +601,7 @@ fn traverse_node_for_ocbits(
     return result;
 }
 
-fn get_by_ray(ray: ptr<function, Line>) -> OctreeRayIntersection {
+fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayIntersection {
     var ray_scale_factors = get_dda_scale_factors(ray); // Should be const, but then it can't be passed as ptr
     var tmp_vec = vec3f(1.) + normalize((*ray).direction); // using local variable as temporary storage
     // I shall answer for my crimes later
@@ -617,7 +617,7 @@ fn get_by_ray(ray: ptr<function, Line>) -> OctreeRayIntersection {
 
     var node_stack: array<u32, NODE_STACK_SIZE>;
     var node_stack_meta: u32 = 0;
-    var ray_current_point = (*ray).origin;
+    var ray_current_point = (*ray).origin + (*ray).direction * start_distance;
     var current_bounds = Cube(vec3(0.), f32(boxtree_meta_data.boxtree_size));
     var target_bounds = current_bounds;
     var current_node_key = BOXTREE_ROOT_NODE_KEY;
@@ -629,7 +629,7 @@ fn get_by_ray(ray: ptr<function, Line>) -> OctreeRayIntersection {
 
     let root_intersect = cube_intersect_ray(current_bounds, ray);
     if(root_intersect.hit){
-        if(root_intersect.impact_hit) {
+        if( 0. == start_distance && root_intersect.impact_hit == true ) {
             ray_current_point += (*ray).direction * root_intersect.impact_distance;
         }
         target_sectant = hash_region(ray_current_point, current_bounds.size);
@@ -678,7 +678,6 @@ fn get_by_ray(ray: ptr<function, Line>) -> OctreeRayIntersection {
                 return OctreeRayIntersection( false, vec4f(0.), ray_current_point, vec3f(0., 0., 1.) );
             }
 
-            // backtrack by default after miss, in case node is a uniform leaf
             if( // In case MIPs are enabled
                 (0 != (boxtree_meta_data.tree_properties & 0x00010000))
                 &&( // In case current node MIP level is smaller, than the required MIP level
@@ -836,10 +835,17 @@ fn get_by_ray(ray: ptr<function, Line>) -> OctreeRayIntersection {
                 target_bounds = current_bounds;
                 current_bounds.size *= f32(BOX_NODE_DIMENSION);
                 current_bounds.min_position -= current_bounds.min_position % current_bounds.size;
+                let ray_point_before_pop = ray_current_point;
                 tmp_vec = round(dda_step_to_next_sibling(
                     ray, &ray_current_point, &target_bounds,
                     &ray_scale_factors
                 ));
+                if(
+                    stage_data.stage == VHX_PREPASS_STAGE_ID
+                    && length(ray_current_point - (*ray).origin) >= max_distance
+                ) {
+                    return OctreeRayIntersection( false, vec4f(0.), ray_point_before_pop, vec3f(0., 0., 1.) );
+                }
                 target_sectant = SECTANT_STEP_RESULT_LUT[
                     hash_region(
                         (
@@ -1084,39 +1090,53 @@ fn update(
         ) // Viewport up direction
         ;
     var ray = Line(ray_endpoint, normalize(ray_endpoint - viewport.origin));
-    var rgb_result = vec3f(0.5,1.0,1.0);
-    var ray_result = get_by_ray(&ray);
-    /*// +++ DEBUG +++
-    var root_bounds = Cube(vec3(0.,0.,0.), f32(boxtree_meta_data.boxtree_size));
-    let root_intersect = cube_intersect_ray(root_bounds, &ray);
-    if root_intersect.hit == true {
-        // Display the xyz axes
-        if root_intersect. impact_hit == true {
-            let axes_length = f32(boxtree_meta_data.boxtree_size) / 2.;
-            let axes_width = f32(boxtree_meta_data.boxtree_size) / 50.;
-            let entry_point = (ray.origin + ray.direction * root_intersect.impact_distance);
-            if entry_point.x < axes_length && entry_point.y < axes_width && entry_point.z < axes_width {
-                rgb_result.r = 1.;
-            }
-            if entry_point.x < axes_width && entry_point.y < axes_length && entry_point.z < axes_width {
-                rgb_result.g = 1.;
-            }
-            if entry_point.x < axes_width && entry_point.y < axes_width && entry_point.z < axes_length {
-                rgb_result.b = 1.;
-            }
-        }
-        rgb_result.b += 0.1; // Also color in the area of the boxtree
-    }
-    */// --- DEBUG ---
     if stage_data.stage == VHX_PREPASS_STAGE_ID {
-        // traveled distance
+        // In preprocess, for every pixel in the depth texture, traverse the model until
+        // either there's a hit or the voxels are too far away to determine 
+        // exactly which pixel belongs to which voxel
         textureStore(
             depth_texture, vec2u(invocation_id.xy),
-            vec4f(length(ray_result.impact_point - ray.origin))
+            vec4f(length(get_by_ray(&ray, 0.).impact_point - ray.origin))
         );
-    }
-
+    } else
     if stage_data.stage == VHX_RENDER_STAGE_ID {
+        var rgb_result = vec3f(0.5,1.0,1.0);
+
+        // get relevant pixels in depth
+        let start_distance = min(
+            textureLoad(depth_texture, vec2u(invocation_id.xy / 2)),
+            min(
+                textureLoad(depth_texture, vec2u(invocation_id.xy / 2) + vec2u(0,1)),
+                min(
+                    textureLoad(depth_texture, vec2u(invocation_id.xy / 2) + vec2u(1,0)),
+                    textureLoad(depth_texture, vec2u(invocation_id.xy / 2) + vec2u(1,1))
+                )
+            )
+        ).r;
+
+        var ray_result = get_by_ray(&ray, start_distance);
+        /*// +++ DEBUG +++
+        var root_bounds = Cube(vec3(0.,0.,0.), f32(boxtree_meta_data.boxtree_size));
+        let root_intersect = cube_intersect_ray(root_bounds, &ray);
+        if root_intersect.hit == true {
+            // Display the xyz axes
+            if root_intersect. impact_hit == true {
+                let axes_length = f32(boxtree_meta_data.boxtree_size) / 2.;
+                let axes_width = f32(boxtree_meta_data.boxtree_size) / 50.;
+                let entry_point = (ray.origin + ray.direction * root_intersect.impact_distance);
+                if entry_point.x < axes_length && entry_point.y < axes_width && entry_point.z < axes_width {
+                    rgb_result.r = 1.;
+                }
+                if entry_point.x < axes_width && entry_point.y < axes_length && entry_point.z < axes_width {
+                    rgb_result.g = 1.;
+                }
+                if entry_point.x < axes_width && entry_point.y < axes_width && entry_point.z < axes_length {
+                    rgb_result.b = 1.;
+                }
+            }
+            rgb_result.b += 0.1; // Also color in the area of the boxtree
+        }
+        */// --- DEBUG ---
         if ray_result.hit == true {
             rgb_result = (
                 ray_result.albedo.rgb * (
@@ -1126,6 +1146,7 @@ fn update(
         } else {
             rgb_result = (rgb_result + ray_result.albedo.rgb) / 2.;
         }
+
         textureStore(output_texture, vec2u(invocation_id.xy), vec4f(rgb_result, 1.));
     }
 }
