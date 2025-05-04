@@ -21,7 +21,7 @@ use iyes_perf_ui::{
 use image::{ImageBuffer, Rgb};
 
 #[cfg(feature = "bevy_wgpu")]
-const DISPLAY_RESOLUTION: [u32; 2] = [1024, 768];
+const DISPLAY_RESOLUTION: [u32; 2] = [1920, 1080];
 
 #[cfg(feature = "bevy_wgpu")]
 const BRICK_DIMENSION: u32 = 32;
@@ -86,7 +86,7 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
                 y: 0.,
                 z: -1.,
             },
-            V3c::new(100., 100., 1000.),
+            V3c::new(10., 10., 1000.),
             3.,
         ),
         DISPLAY_RESOLUTION,
@@ -100,7 +100,10 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
             .output_texture()
             .clone(),
     );
-    display.custom_size = Some(Vec2::new(1024., 768.));
+    display.custom_size = Some(Vec2::new(
+        DISPLAY_RESOLUTION[0] as f32,
+        DISPLAY_RESOLUTION[1] as f32,
+    ));
     commands.spawn(display);
     commands.insert_resource(views);
     commands.spawn((

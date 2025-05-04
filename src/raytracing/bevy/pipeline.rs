@@ -346,6 +346,118 @@ impl render_graph::Node for VhxRenderNode {
 }
 
 //##############################################################################
+//   █████████  ███████████   █████████     █████████  ██████████
+//  ███░░░░░███░█░░░███░░░█  ███░░░░░███   ███░░░░░███░░███░░░░░█
+// ░███    ░░░ ░   ░███  ░  ░███    ░███  ███     ░░░  ░███  █ ░
+// ░░█████████     ░███     ░███████████ ░███          ░██████
+//  ░░░░░░░░███    ░███     ░███░░░░░███ ░███    █████ ░███░░█
+//  ███    ░███    ░███     ░███    ░███ ░░███  ░░███  ░███ ░   █
+// ░░█████████     █████    █████   █████ ░░█████████  ██████████
+//  ░░░░░░░░░     ░░░░░    ░░░░░   ░░░░░   ░░░░░░░░░  ░░░░░░░░░░
+
+//    █████████  ███████████      ███████    █████  █████ ███████████   █████████
+//   ███░░░░░███░░███░░░░░███   ███░░░░░███ ░░███  ░░███ ░░███░░░░░███ ███░░░░░███
+//  ███     ░░░  ░███    ░███  ███     ░░███ ░███   ░███  ░███    ░███░███    ░░░
+// ░███          ░██████████  ░███      ░███ ░███   ░███  ░██████████ ░░█████████
+// ░███    █████ ░███░░░░░███ ░███      ░███ ░███   ░███  ░███░░░░░░   ░░░░░░░░███
+// ░░███  ░░███  ░███    ░███ ░░███     ███  ░███   ░███  ░███         ███    ░███
+//  ░░█████████  █████   █████ ░░░███████░   ░░████████   █████       ░░█████████
+//   ░░░░░░░░░  ░░░░░   ░░░░░    ░░░░░░░      ░░░░░░░░   ░░░░░         ░░░░░░░░░
+//##############################################################################
+///
+fn create_stage_bind_groups(
+    gpu_images: &Res<RenderAssets<GpuImage>>,
+    pipeline: &mut VhxRenderPipeline,
+    render_device: &Res<RenderDevice>,
+    tree_view: &BoxTreeGPUView,
+) -> (BindGroup, BindGroup) {
+    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+    buffer
+        .write(&RenderStageData {
+            stage: VHX_PREPASS_STAGE_ID,
+            output_resolution: UVec2::new(tree_view.resolution[0] / 2, tree_view.resolution[1] / 2),
+        })
+        .unwrap();
+    let prepass_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("Vhx Prepass stage Buffer"),
+        contents: &buffer.into_inner(),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+    buffer
+        .write(&RenderStageData {
+            stage: VHX_RENDER_STAGE_ID,
+            output_resolution: UVec2::new(tree_view.resolution[0], tree_view.resolution[1]),
+        })
+        .unwrap();
+    let render_stage_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("Vhx Main Render stage Buffer"),
+        contents: &buffer.into_inner(),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    (
+        render_device.create_bind_group(
+            "Vhx Prepass stage bind group",
+            &pipeline.render_stage_bind_group_layout,
+            &[
+                bevy::render::render_resource::BindGroupEntry {
+                    binding: 0,
+                    resource: prepass_data_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(
+                        &gpu_images
+                            .get(&tree_view.spyglass.output_texture)
+                            .unwrap()
+                            .texture_view,
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(
+                        &gpu_images
+                            .get(&tree_view.spyglass.depth_texture)
+                            .unwrap()
+                            .texture_view,
+                    ),
+                },
+            ],
+        ),
+        render_device.create_bind_group(
+            "Vhx Main Render stage main bind group",
+            &pipeline.render_stage_bind_group_layout,
+            &[
+                bevy::render::render_resource::BindGroupEntry {
+                    binding: 0,
+                    resource: render_stage_data_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(
+                        &gpu_images
+                            .get(&tree_view.spyglass.output_texture)
+                            .unwrap()
+                            .texture_view,
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(
+                        &gpu_images
+                            .get(&tree_view.spyglass.depth_texture)
+                            .unwrap()
+                            .texture_view,
+                    ),
+                },
+            ],
+        ),
+    )
+}
+
+//##############################################################################
 //   █████████  ███████████  █████ █████
 //  ███░░░░░███░░███░░░░░███░░███ ░░███
 // ░███    ░░░  ░███    ░███ ░░███ ███
@@ -370,7 +482,9 @@ impl render_graph::Node for VhxRenderNode {
 // ░░███  ░░███  ░███    ░███ ░░███     ███  ░███   ░███  ░███
 //  ░░█████████  █████   █████ ░░░███████░   ░░████████   █████
 //##############################################################################
-pub(crate) fn create_spyglass_bind_group(
+/// Creates the bind groups for render stages
+/// returns with a pair: (prepass_bind_group, main_stage_bind_group)
+fn create_spyglass_bind_group(
     pipeline: &mut VhxRenderPipeline,
     render_device: &Res<RenderDevice>,
     tree_view: &BoxTreeGPUView,
@@ -442,6 +556,7 @@ pub(crate) fn create_spyglass_bind_group(
 //     ░░███      █████ ██████████    ░░███ ░░███         █████   █████ ██████████░░█████████
 //      ░░░      ░░░░░ ░░░░░░░░░░      ░░░   ░░░         ░░░░░   ░░░░░ ░░░░░░░░░░  ░░░░░░░░░
 //##############################################################################
+/// Creates the resource collector for the given view
 fn create_view_resources(
     pipeline: &mut VhxRenderPipeline,
     render_device: Res<RenderDevice>,
@@ -542,111 +657,11 @@ fn create_view_resources(
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
     });
 
-    //##############################################################################
-    //   █████████  ███████████   █████████     █████████  ██████████
-    //  ███░░░░░███░█░░░███░░░█  ███░░░░░███   ███░░░░░███░░███░░░░░█
-    // ░███    ░░░ ░   ░███  ░  ░███    ░███  ███     ░░░  ░███  █ ░
-    // ░░█████████     ░███     ░███████████ ░███          ░██████
-    //  ░░░░░░░░███    ░███     ░███░░░░░███ ░███    █████ ░███░░█
-    //  ███    ░███    ░███     ░███    ░███ ░░███  ░░███  ░███ ░   █
-    // ░░█████████     █████    █████   █████ ░░█████████  ██████████
-    //  ░░░░░░░░░     ░░░░░    ░░░░░   ░░░░░   ░░░░░░░░░  ░░░░░░░░░░
-
-    //    █████████  ███████████      ███████    █████  █████ ███████████   █████████
-    //   ███░░░░░███░░███░░░░░███   ███░░░░░███ ░░███  ░░███ ░░███░░░░░███ ███░░░░░███
-    //  ███     ░░░  ░███    ░███  ███     ░░███ ░███   ░███  ░███    ░███░███    ░░░
-    // ░███          ░██████████  ░███      ░███ ░███   ░███  ░██████████ ░░█████████
-    // ░███    █████ ░███░░░░░███ ░███      ░███ ░███   ░███  ░███░░░░░░   ░░░░░░░░███
-    // ░░███  ░░███  ░███    ░███ ░░███     ███  ░███   ░███  ░███         ███    ░███
-    //  ░░█████████  █████   █████ ░░░███████░   ░░████████   █████       ░░█████████
-    //   ░░░░░░░░░  ░░░░░   ░░░░░    ░░░░░░░      ░░░░░░░░   ░░░░░         ░░░░░░░░░
-    //##############################################################################
-    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-    buffer
-        .write(&RenderStageData {
-            stage: VHX_PREPASS_STAGE_ID,
-            output_resolution: UVec2::new(tree_view.resolution[0] / 2, tree_view.resolution[1] / 2),
-        })
-        .unwrap();
-    let prepass_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("Vhx Prepass stage Buffer"),
-        contents: &buffer.into_inner(),
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-    });
-
-    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-    buffer
-        .write(&RenderStageData {
-            stage: VHX_RENDER_STAGE_ID,
-            output_resolution: UVec2::new(tree_view.resolution[0], tree_view.resolution[1]),
-        })
-        .unwrap();
-    let render_stage_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("Vhx Main Render stage Buffer"),
-        contents: &buffer.into_inner(),
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-    });
-
-    let render_stage_prepass_bind_group = render_device.create_bind_group(
-        "Vhx Prepass stage bind group",
-        &pipeline.render_stage_bind_group_layout,
-        &[
-            bevy::render::render_resource::BindGroupEntry {
-                binding: 0,
-                resource: prepass_data_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::TextureView(
-                    &gpu_images
-                        .get(&tree_view.spyglass.output_texture)
-                        .unwrap()
-                        .texture_view,
-                ),
-            },
-            BindGroupEntry {
-                binding: 2,
-                resource: BindingResource::TextureView(
-                    &gpu_images
-                        .get(&tree_view.spyglass.depth_texture)
-                        .unwrap()
-                        .texture_view,
-                ),
-            },
-        ],
-    );
-
-    let render_stage_main_bind_group = render_device.create_bind_group(
-        "Vhx Main Render stage main bind group",
-        &pipeline.render_stage_bind_group_layout,
-        &[
-            bevy::render::render_resource::BindGroupEntry {
-                binding: 0,
-                resource: render_stage_data_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::TextureView(
-                    &gpu_images
-                        .get(&tree_view.spyglass.output_texture)
-                        .unwrap()
-                        .texture_view,
-                ),
-            },
-            BindGroupEntry {
-                binding: 2,
-                resource: BindingResource::TextureView(
-                    &gpu_images
-                        .get(&tree_view.spyglass.depth_texture)
-                        .unwrap()
-                        .texture_view,
-                ),
-            },
-        ],
-    );
-
     let (spyglass_bind_group, viewport_buffer, node_requests_buffer, readable_node_requests_buffer) =
         create_spyglass_bind_group(pipeline, &render_device, tree_view);
+
+    let (render_stage_prepass_bind_group, render_stage_main_bind_group) =
+        create_stage_bind_groups(&gpu_images, pipeline, &render_device, tree_view);
 
     let tree_bind_group = render_device.create_bind_group(
         "BoxTreeRenderData",
@@ -773,7 +788,17 @@ pub(crate) fn prepare_bind_groups(
         );
 
         // Update View resources
+        let (render_stage_prepass_bind_group, render_stage_main_bind_group) =
+            create_stage_bind_groups(
+                &gpu_images,
+                &mut pipeline,
+                &render_device,
+                &vhx_view_set.views[0].lock().unwrap(),
+            );
+
         let view_resources = vhx_view_set.resources[0].as_mut().unwrap();
+        view_resources.render_stage_prepass_bind_group = render_stage_prepass_bind_group;
+        view_resources.render_stage_main_bind_group = render_stage_main_bind_group;
         view_resources.spyglass_bind_group = spyglass_bind_group;
         view_resources.viewport_buffer = viewport_buffer;
         view_resources.node_requests_buffer = node_requests_buffer;
@@ -784,6 +809,7 @@ pub(crate) fn prepare_bind_groups(
         view.new_output_texture = None;
         view.new_depth_texture = None;
         view.rebuild = false;
+        return;
     }
 
     // build everything from the ground up
