@@ -1,3 +1,4 @@
+mod bind_groups;
 mod cache;
 mod data;
 mod pipeline;
@@ -18,10 +19,8 @@ use bendy::{decoding::FromBencode, encoding::ToBencode};
 use bevy::{
     app::{App, Plugin},
     asset::LoadState,
-    prelude::{
-        AssetServer, Assets, ExtractSchedule, Handle, Image, IntoSystemConfigs, Res, ResMut,
-        Update, Vec4,
-    },
+    ecs::prelude::IntoScheduleConfigs,
+    prelude::{AssetServer, Assets, ExtractSchedule, Handle, Image, Res, ResMut, Update, Vec4},
     render::{
         extract_resource::ExtractResourcePlugin,
         render_asset::RenderAssetUsages,

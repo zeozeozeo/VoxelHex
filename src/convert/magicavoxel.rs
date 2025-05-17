@@ -58,6 +58,13 @@ impl From<Size> for V3c<i32> {
     }
 }
 
+/// Gives the size of a tree which fits the given model size
+pub fn model_size_to_tree_size(model_size: &V3c<i32>, brick_dimension: u32) -> u32 {
+    let model_size = model_size.x.max(model_size.y).max(model_size.z);
+    let tree_size = (model_size as f32 / brick_dimension as f32).log(4.).ceil() as u32;
+    4_u32.pow(tree_size) * brick_dimension
+}
+
 /// Converts the given byte value to a rotation matrix
 /// Rotation matrix in voxel context enables 90 degr rotations only, so the contents of the matrix is restricted to 0,1,-1
 /// Takes into consideration, that the stored matrix is row-major, while Matrix3 storage is column major
@@ -223,11 +230,7 @@ impl MIPMapStrategy {
         let (vox_data, min_position, mut max_position) =
             BoxTree::<T>::load_vox_file_internal(filename);
         max_position -= min_position;
-        let max_position = max_position.x.max(max_position.y).max(max_position.z);
-        let tree_size = (max_position as f32 / brick_dimension as f32)
-            .log(4.)
-            .ceil() as u32;
-        let tree_size = 4_u32.pow(tree_size) * brick_dimension;
+        let tree_size = model_size_to_tree_size(&max_position, brick_dimension);
 
         let mut shocovox_boxtree =
             BoxTree::<T>::new(tree_size, brick_dimension).unwrap_or_else(|err| {
@@ -268,11 +271,7 @@ impl<
     pub fn load_vox_file(filename: &str, brick_dimension: u32) -> Result<Self, &'static str> {
         let (vox_data, min_position, mut max_position) = Self::load_vox_file_internal(filename);
         max_position -= min_position;
-        let max_position = max_position.x.max(max_position.y).max(max_position.z);
-        let tree_size = (max_position as f32 / brick_dimension as f32)
-            .log(4.)
-            .ceil() as u32;
-        let tree_size = 4_u32.pow(tree_size) * brick_dimension;
+        let tree_size = model_size_to_tree_size(&max_position, brick_dimension);
 
         let mut shocovox_boxtree =
             BoxTree::<T>::new(tree_size, brick_dimension).unwrap_or_else(|err| {

@@ -8,6 +8,14 @@ fn main() {
     const TREE_SIZE: u32 = 128; // The length of the edges of the cube the BoxTree covers ( number of voxels )
     const BRICK_DIMENSION: u32 = 8; // How big should one "group of voxels" should be refer to docs @Octree::new
                                     // If you have no idea what it should be, 32 is a good reference
+
+    // There are some constraints to the sizes relative to the brick dimension. See @BoxTree::new docs
+    // Some Valid examples:
+    // BRICK_DIMENSION 32; TREE_SIZE: 128 or 512 or 2048 or 8192
+    // BRICK_DIMENSION 16; TREE_SIZE: 64 or 256 or 1024 or 4096
+    // BRICK_DIMENSION 8; TREE_SIZE: 32 or 128 or 512 or 2048
+    // BRICK_DIMENSION 4; TREE_SIZE: 16 or 64 or 256 or 1024
+    // BRICK_DIMENSION 2; TREE_SIZE: 8 or 32 or 128 or 512
     let mut tree: BoxTree = BoxTree::new(TREE_SIZE, BRICK_DIMENSION).ok().unwrap();
 
     // The visual data the boxtree contains are provided through the ALbedo type

@@ -1,7 +1,7 @@
 use crate::boxtree::{types::PaletteIndexValues, BoxTree, V3cf32, VoxelData};
 use bevy::{
     asset::Handle,
-    ecs::system::Resource,
+    ecs::resource::Resource,
     math::{UVec2, Vec4},
     prelude::Image,
     reflect::TypePath,
