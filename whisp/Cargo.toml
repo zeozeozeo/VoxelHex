@@ -1,0 +1,14 @@
+[package]
+name = "whisp"
+version = "0.1.0"
+edition = "2024"
+authors = ["Dávid Tóth <toth.david.munka@gmail.com>"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+bevy = { version = "0.16.0", features = ["wayland"] }
+bevy_lunex = { version = "*" }
+
+[[bin]]
+name = "whisp"
+path = "src/main.rs"
