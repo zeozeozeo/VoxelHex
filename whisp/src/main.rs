@@ -4,8 +4,11 @@ mod ui_layout;
 
 use bevy::{prelude::*, render::view::RenderLayers, window::WindowPlugin};
 use bevy_lunex::prelude::*;
+use bevy_pkv::PkvStore;
 
 fn main() {
+    let preferences = init_preferences_cache();
+    let ui_state = ui_behavior::UiState::new(&preferences);
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
         .add_plugins((
@@ -26,18 +29,70 @@ fn main() {
         .add_systems(Startup, (ui_layout::setup, setup))
         .add_systems(
             Startup,
-            (
-                ui_behavior::setup.after(crate::ui_layout::setup),
-                ui_behavior::setup_mouse_action.after(crate::ui_layout::setup),
-            ),
+            ((
+                ui_behavior::setup_mouse_action,
+                ui_behavior::setup,
+                ui_behavior::messages,
+            )
+                .after(crate::ui_layout::setup),),
         )
         .add_systems(
             Update,
-            (ui_behavior::update, ui_behavior::mouse_action_cleanup),
+            (
+                ui_behavior::update,
+                ui_behavior::mouse_action_cleanup,
+                ui_behavior::keyboard_input,
+            ),
         )
-        .insert_resource(ui_behavior::UiState::new())
+        .insert_resource(ui_state)
+        .insert_resource(preferences)
         .add_observer(ui_behavior::resolution_changed_observer)
         .run();
+}
+
+fn init_preferences_cache() -> PkvStore {
+    let mut pkv = PkvStore::new("MinistryOfVoxelAffairs", "Whisp");
+    if pkv.get::<String>("output_resolution_width").is_err() {
+        pkv.set("output_resolution_width", &"1920")
+            .expect("Failed to store default value: output_resolution_width");
+    }
+    if pkv.get::<String>("output_resolution_height").is_err() {
+        pkv.set("output_resolution_height", &"1080")
+            .expect("Failed to store default value: output_resolution_height");
+    }
+    if pkv.get::<String>("fov").is_err() {
+        pkv.set("fov", &"50")
+            .expect("Failed to store default value: fov");
+    }
+    if pkv.get::<String>("viewport_resolution_width").is_err() {
+        pkv.set("viewport_resolution_width", &"100")
+            .expect("Failed to store default value: viewport_resolution_width");
+    }
+    if pkv.get::<String>("viewport_resolution_height").is_err() {
+        pkv.set("viewport_resolution_height", &"100")
+            .expect("Failed to store default value: viewport_resolution_height");
+    }
+    if pkv.get::<String>("view_distance").is_err() {
+        pkv.set("view_distance", &"1024")
+            .expect("Failed to store default value: view_distance");
+    }
+    if pkv.get::<String>("ui_hidden").is_err() {
+        pkv.set("ui_hidden", &"false")
+            .expect("Failed to store default value: ui_hidden");
+    }
+    if pkv.get::<String>("shortcuts_hidden").is_err() {
+        pkv.set("shortcuts_hidden", &"false")
+            .expect("Failed to store default value: shortcuts_hidden");
+    }
+    if pkv.get::<String>("output_resolution_linked").is_err() {
+        pkv.set("output_resolution_linked", &"false")
+            .expect("Failed to store default value: output_resolution_linked");
+    }
+    if pkv.get::<String>("viewport_resolution_linked").is_err() {
+        pkv.set("viewport_resolution_linked", &"false")
+            .expect("Failed to store default value: viewport_resolution_linked");
+    }
+    pkv
 }
 
 fn setup(mut commands: Commands) {

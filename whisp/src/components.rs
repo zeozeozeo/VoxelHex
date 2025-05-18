@@ -20,7 +20,13 @@ pub(crate) struct Depth;
 pub(crate) struct Slider;
 
 #[derive(Component)]
+pub(crate) struct Button;
+
+#[derive(Component)]
 pub(crate) struct Container;
+
+#[derive(Component)]
+pub(crate) struct UserInterface;
 
 #[derive(Component)]
 pub(crate) struct Model;
