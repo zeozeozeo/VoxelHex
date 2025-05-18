@@ -42,7 +42,6 @@ criterion = { version = "0.4", features = ["html_reports"] }
 image = "0.25.1"
 
 # for example bevy_wgpu
-iyes_perf_ui = "0.4.0"
 bevy_panorbit_camera = "0.21.1"
 
 
