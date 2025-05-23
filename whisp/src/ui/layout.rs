@@ -39,7 +39,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                     } else {
                         Visibility::Visible
                     },
-                    crate::components::UserInterface,
+                    crate::ui::components::UserInterface,
                     UiLayout::solid()
                         .scaling(Scaling::Fill)
                         .align_x(-1.)
@@ -54,8 +54,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             // model name panel
                             ui_model_panel
                                 .spawn((
-                                    crate::components::Model,
-                                    crate::components::Container,
+                                    crate::ui::components::Model,
+                                    crate::ui::components::Container,
                                     UiLayout::window()
                                         .anchor(Anchor::TopLeft)
                                         .pos(Ab((5., 5.)))
@@ -74,7 +74,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         Sprite::from_image(asset_server.load("ui/open_icon.png")),
                                     ));
                                     ui_modelname_field.spawn((
-                                        crate::components::Model,
+                                        crate::ui::components::Model,
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
                                             .pos(Ab((32., 4.)))
@@ -85,7 +85,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         Text2d::new(
                                             pkv.get::<String>("model_name").ok().unwrap_or_else(
                                                 || {
-                                                    "ginerbread_house_by_kirra_luan(1024^3)"
+                                                    "gingerbread_house_by_kirra_luan(1024^3)"
                                                         .to_string()
                                                 },
                                             ),
@@ -110,9 +110,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 ))
                                 .with_children(|ui_resolution_panel| {
                                     ui_resolution_panel.spawn((
-                                        crate::components::Output,
-                                        crate::components::Link,
-                                        crate::components::Button,
+                                        crate::ui::components::Output,
+                                        crate::ui::components::Link,
+                                        crate::ui::components::Button,
                                         icon(),
                                         UiColor::from(Color::srgb(1., 1., 1.)),
                                         if let Ok(link) =
@@ -133,10 +133,10 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                     ));
 
                                     ui_resolution_panel.spawn((
-                                        crate::components::Output,
-                                        crate::components::Width,
-                                        crate::components::Button,
-                                        crate::components::UiAction {
+                                        crate::ui::components::Output,
+                                        crate::ui::components::Width,
+                                        crate::ui::components::Button,
+                                        crate::ui::components::UiAction {
                                             is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [128, 7680],
@@ -168,10 +168,10 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                     ));
 
                                     ui_resolution_panel.spawn((
-                                        crate::components::Output,
-                                        crate::components::Height,
-                                        crate::components::Button,
-                                        crate::components::UiAction {
+                                        crate::ui::components::Output,
+                                        crate::ui::components::Height,
+                                        crate::ui::components::Button,
+                                        crate::ui::components::UiAction {
                                             is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [72, 4320],
@@ -210,7 +210,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 ))
                                 .with_children(|ui_performance_panel| {
                                     ui_performance_panel.spawn((
-                                        crate::components::Performance,
+                                        crate::ui::components::Performance,
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
                                             .pos(Ab((25., 5.)))
@@ -237,8 +237,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 ))
                                 .with_children(|ui_versions_panel| {
                                     ui_versions_panel.spawn((
-                                        crate::components::Model,
-                                        crate::components::Info,
+                                        crate::ui::components::Model,
+                                        crate::ui::components::Info,
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
                                             .pos(Ab((15., 5.)))
@@ -263,10 +263,10 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             // Loading bar
                             ui_model_panel
                                 .spawn((
-                                    crate::components::Model,
-                                    crate::components::Loading,
-                                    crate::components::Slider,
-                                    crate::components::Container,
+                                    crate::ui::components::Model,
+                                    crate::ui::components::Loading,
+                                    crate::ui::components::Slider,
+                                    crate::ui::components::Container,
                                     UiLayout::window()
                                         .anchor(Anchor::TopLeft)
                                         .pos(Ab((5., 75.)))
@@ -280,9 +280,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 ))
                                 .with_children(|ui_loading_bar| {
                                     ui_loading_bar.spawn((
-                                        crate::components::Model,
-                                        crate::components::Loading,
-                                        crate::components::Slider,
+                                        crate::ui::components::Model,
+                                        crate::ui::components::Loading,
+                                        crate::ui::components::Slider,
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
                                             .pos(Ab((0., 0.)))
@@ -305,8 +305,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         )
                                         .with_children(|ui_loading_bar_padding| {
                                             ui_loading_bar_padding.spawn((
-                                                crate::components::Model,
-                                                crate::components::Loading,
+                                                crate::ui::components::Model,
+                                                crate::ui::components::Loading,
                                                 UiLayout::solid()
                                                     .scaling(Scaling::VerFill)
                                                     .align_x(-1.)
@@ -318,8 +318,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                             ));
 
                                             ui_loading_bar_padding.spawn((
-                                                crate::components::Model,
-                                                crate::components::Status,
+                                                crate::ui::components::Model,
+                                                crate::ui::components::Status,
                                                 UiLayout::solid()
                                                     .scaling(Scaling::VerFill)
                                                     .align_x(1.)
@@ -336,8 +336,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                     // Camera Intrinsics panel
                     ui_hidable
                         .spawn((
-                            crate::components::Camera,
-                            crate::components::Container,
+                            crate::ui::components::Camera,
+                            crate::ui::components::Container,
                             UiLayout::window()
                                 .anchor(Anchor::TopRight)
                                 .x(Rl(100.) - Ab(5.))
@@ -362,11 +362,11 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             let fov_value_bounds = [1, 100];
                             ui_camera_intrinsics_panel
                                 .spawn((
-                                    crate::components::Camera,
-                                    crate::components::Depth,
-                                    crate::components::Slider,
-                                    crate::components::Container,
-                                    crate::components::UiAction {
+                                    crate::ui::components::Camera,
+                                    crate::ui::components::Depth,
+                                    crate::ui::components::Slider,
+                                    crate::ui::components::Container,
+                                    crate::ui::components::UiAction {
                                         is_active: false,
                                         change_sensitivity: 0.01,
                                         boundaries: fov_value_bounds,
@@ -386,9 +386,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 ))
                                 .with_children(|ui_fov_panel| {
                                     ui_fov_panel.spawn((
-                                        crate::components::Camera,
-                                        crate::components::Depth,
-                                        crate::components::Slider,
+                                        crate::ui::components::Camera,
+                                        crate::ui::components::Depth,
+                                        crate::ui::components::Slider,
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
                                             .pos(Ab((0., 0.)))
@@ -426,9 +426,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 )
                                 .with_children(|ui_camera_intrinsics_viewport_row| {
                                     ui_camera_intrinsics_viewport_row.spawn((
-                                        crate::components::Camera,
-                                        crate::components::Link,
-                                        crate::components::Button,
+                                        crate::ui::components::Camera,
+                                        crate::ui::components::Link,
+                                        crate::ui::components::Button,
                                         icon(),
                                         UiColor::from(Color::srgb(1., 1., 1.)),
                                         if let Ok(link) =
@@ -447,10 +447,10 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                     ));
 
                                     ui_camera_intrinsics_viewport_row.spawn((
-                                        crate::components::Camera,
-                                        crate::components::Width,
-                                        crate::components::Button,
-                                        crate::components::UiAction {
+                                        crate::ui::components::Camera,
+                                        crate::ui::components::Width,
+                                        crate::ui::components::Button,
+                                        crate::ui::components::UiAction {
                                             is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [5, 250],
@@ -483,10 +483,10 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                     ));
 
                                     ui_camera_intrinsics_viewport_row.spawn((
-                                        crate::components::Camera,
-                                        crate::components::Height,
-                                        crate::components::Button,
-                                        crate::components::UiAction {
+                                        crate::ui::components::Camera,
+                                        crate::ui::components::Height,
+                                        crate::ui::components::Button,
+                                        crate::ui::components::UiAction {
                                             is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [5, 250],
@@ -521,10 +521,10 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             ));
 
                             ui_camera_intrinsics_panel.spawn((
-                                crate::components::Camera,
-                                crate::components::Depth,
-                                crate::components::Button,
-                                crate::components::UiAction {
+                                crate::ui::components::Camera,
+                                crate::ui::components::Depth,
+                                crate::ui::components::Button,
+                                crate::ui::components::UiAction {
                                     is_active: false,
                                     change_sensitivity: 0.005,
                                     boundaries: [10, 500000],
@@ -555,8 +555,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             } else {
                                 Visibility::Visible
                             },
-                            crate::components::Info,
-                            crate::components::Container,
+                            crate::ui::components::Info,
+                            crate::ui::components::Container,
                             UiLayout::window()
                                 .anchor(Anchor::TopRight)
                                 .x(Rl(100.) - Ab(5.))
@@ -569,8 +569,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                         ))
                         .with_children(|ui_shortcuts_panel| {
                             ui_shortcuts_panel.spawn((
-                                crate::components::Info,
-                                crate::components::Button,
+                                crate::ui::components::Info,
+                                crate::ui::components::Button,
                                 icon(),
                                 Sprite::from_image(asset_server.load("ui/info_active.png")),
                             ));
@@ -584,9 +584,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             } else {
                                 Visibility::Visible
                             },
-                            crate::components::Info,
-                            crate::components::Container,
-                            crate::components::Expanded,
+                            crate::ui::components::Info,
+                            crate::ui::components::Container,
+                            crate::ui::components::Expanded,
                             UiLayout::window()
                                 .anchor(Anchor::TopRight)
                                 .x(Rl(100.) - Ab(5.))
@@ -598,9 +598,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                         ))
                         .with_children(|ui_shortcuts_panel| {
                             ui_shortcuts_panel.spawn((
-                                crate::components::Info,
-                                crate::components::Button,
-                                crate::components::Expanded,
+                                crate::ui::components::Info,
+                                crate::ui::components::Button,
+                                crate::ui::components::Expanded,
                                 UiLayout::window()
                                     .anchor(Anchor::TopRight)
                                     .size(Ab((24., 24.)))

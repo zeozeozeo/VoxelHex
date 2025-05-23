@@ -1,6 +1,4 @@
-mod components;
-mod ui_behavior;
-mod ui_layout;
+mod ui;
 
 use bevy::{prelude::*, render::view::RenderLayers, window::WindowPlugin};
 use bevy_lunex::prelude::*;
@@ -8,7 +6,7 @@ use bevy_pkv::PkvStore;
 
 fn main() {
     let preferences = init_preferences_cache();
-    let ui_state = ui_behavior::UiState::new(&preferences);
+    let ui_state = ui::UiState::new(&preferences);
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
         .add_plugins((
@@ -26,27 +24,27 @@ fn main() {
             UiLunexPlugins,
             //UiLunexDebugPlugin::<1, 2>,
         ))
-        .add_systems(Startup, (ui_layout::setup, setup))
+        .add_systems(Startup, (ui::layout::setup, setup))
         .add_systems(
             Startup,
             ((
-                ui_behavior::setup_mouse_action,
-                ui_behavior::setup,
-                ui_behavior::messages,
+                ui::input::setup_mouse_action,
+                ui::behavior::setup,
+                ui::behavior::messages,
             )
-                .after(crate::ui_layout::setup),),
+                .after(crate::ui::layout::setup),),
         )
         .add_systems(
             Update,
             (
-                ui_behavior::update,
-                ui_behavior::mouse_action_cleanup,
-                ui_behavior::keyboard_input,
+                ui::behavior::update,
+                ui::input::mouse_action_cleanup,
+                ui::input::keyboard_input,
             ),
         )
         .insert_resource(ui_state)
         .insert_resource(preferences)
-        .add_observer(ui_behavior::resolution_changed_observer)
+        .add_observer(ui::behavior::resolution_changed_observer)
         .run();
 }
 
