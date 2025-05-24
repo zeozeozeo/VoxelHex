@@ -7,11 +7,12 @@ use bevy::{
     window::WindowPlugin,
 };
 use bevy_lunex::prelude::*;
+use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use bevy_pkv::PkvStore;
 use std::{ffi::OsStr, path::Path};
 use ui::{components::*, UiState};
 use voxelhex::{
-    boxtree::{BoxTree, V3c, V3cf32},
+    boxtree::{BoxTree, V3c},
     raytracing::{BoxTreeGPUHost, VhxViewSet},
 };
 
@@ -35,6 +36,7 @@ fn main() {
             }),
             voxelhex::raytracing::RenderBevyPlugin::<u32>::new(),
             bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
+            PanOrbitCameraPlugin,
             UiLunexPlugins,
             //UiLunexDebugPlugin::<1, 2>,
         ))
@@ -54,7 +56,9 @@ fn main() {
             (
                 ui::behavior::update,
                 ui::input::mouse_action_cleanup,
-                ui::input::keyboard_input,
+                ui::input::handle_settings_update,
+                ui::input::handle_camera_update,
+                ui::input::handle_world_interaction_block_by_ui,
                 observe_file_drop,
                 handle_model_load,
             ),
@@ -157,6 +161,7 @@ fn handle_model_load(
     mut ui_state: ResMut<ui::UiState>,
     tree_factory: Option<ResMut<TreeLoadingTask>>,
     mut view_output: Query<(&mut Sprite, &Model, &Output, &Container)>,
+    mut status_text: Query<(&mut Text2d, &Model, &Status)>,
 ) {
     if let Some(mut tree_factory) = tree_factory {
         if tree_factory.confirmed {
@@ -239,6 +244,10 @@ fn load_last_loaded_model(
 
 fn init_preferences_cache() -> PkvStore {
     let mut pkv = PkvStore::new("MinistryOfVoxelAffairs", "Whisp");
+    if pkv.get::<String>("camera_locked").is_err() {
+        pkv.set("camera_locked", &"false")
+            .expect("Failed to store default value: camera_locked");
+    }
     if pkv.get::<String>("output_resolution_width").is_err() {
         pkv.set("output_resolution_width", &"1920")
             .expect("Failed to store default value: output_resolution_width");
@@ -283,6 +292,16 @@ fn init_preferences_cache() -> PkvStore {
 }
 
 fn setup(mut commands: Commands) {
+    commands.spawn((
+        bevy::prelude::Camera {
+            is_active: false,
+            ..default()
+        },
+        PanOrbitCamera {
+            focus: Vec3::new(0., 300., 0.),
+            ..default()
+        },
+    ));
     commands.spawn((
         Camera2d,
         UiSourceCamera::<0>,

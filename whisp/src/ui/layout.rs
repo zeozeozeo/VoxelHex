@@ -392,7 +392,17 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
                                             .pos(Ab((0., 0.)))
-                                            .width(Ab(fov_to_x(95, 295.0, fov_value_bounds)))
+                                            .width(
+                                                Ab(
+                                                    fov_to_x(
+                                                        pkv.get::<String>("fov").ok()
+                                                            .unwrap_or_else(|| "50".to_string()).parse::<u32>()
+                                                            .expect("Expected to be able to parse fov setting"),
+                                                        295.0,
+                                                        fov_value_bounds
+                                                    )
+                                                )
+                                            )
                                             .height(Rl(100.))
                                             .pack(),
                                         Sprite::from_color(
@@ -591,7 +601,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 .anchor(Anchor::TopRight)
                                 .x(Rl(100.) - Ab(5.))
                                 .y(Ab(200.))
-                                .size(Ab((200.0, 512.0)))
+                                .size(Ab((250.0, 512.0)))
                                 .pack(),
                             Sprite::from_color(Color::srgba(1., 1., 1., 0.7), Vec2::new(1., 1.)),
                             UiColor::from(Color::srgb(0.2, 0.1, 0.25)),
@@ -616,28 +626,64 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
                                 Text2d::new(
                                     "
-G   - hide UI
-F5  - Save Settings
-F9  - Load Settings
-F11 - Restore defaults
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
-Mouse Click - clikity
+      G     - hide UI
+      F4    - Lock Camera
+      F5    - Save Settings
+(ctrl)F5    - Restore defaults
+      F6    - Save camera position
+(ctrl)F6    - Restore default
+      F9    - Load Settings
+      F10   - Load Camera position
+      WS    - Forward/Backward
+      AD    - Move Sideways
+      Shift - Move Y up
+      Ctrl  - Move Y Down
+---------------------------------
+Drag mouse to look around!
+---------------------------------
+Drag Buttons to update values!
+---------------------------------
+Drag&Drop files to open them!
+(Magicavoxel format)
+---------------------------------
 ",
                                 ),
                             ));
                         });
+
+                        //Camera movements locked icon
+                        ui_hidable.spawn((
+                            if hide_ui {
+                                Visibility::Hidden
+                            } else {
+                                Visibility::Visible
+                            },
+                            crate::ui::components::Camera,
+                            crate::ui::components::Info,
+                            crate::ui::components::Button,
+                            UiLayout::window()
+                                .anchor(Anchor::TopRight)
+                                .x(Rl(100.) - Ab(5.))
+                                .y(Ab(110.))
+                                .size(Ab((32.0, 32.0)))
+                                .pack(),
+                                OnHoverSetCursor::new(SystemCursorIcon::Pointer),
+                                if let Ok(link) =
+                                    pkv.get::<String>("camera_locked")
+                                {
+                                    if link.parse::<bool>()
+                                        .expect("Expected camera_locked setting to be either 'true' or 'false'")
+                                    {
+                                        Sprite::from_image(asset_server.load("ui/lock_closed_icon.png"))
+                                    } else {
+                                        Sprite::from_image(asset_server.load("ui/lock_open_icon.png"))
+                                    }
+                                } else {
+                                    Sprite::from_image(
+                                        asset_server.load("ui/lock_open_icon.png"),
+                                    )
+                                },
+                        ));
                 });
 
             // render texture

@@ -1,7 +1,12 @@
 use crate::{ui::components::*, ui::UiState};
 use bevy::prelude::*;
 use bevy_lunex::prelude::*;
+use bevy_panorbit_camera::PanOrbitCamera;
 use bevy_pkv::PkvStore;
+use voxelhex::{
+    boxtree::{V3c, V3cf32},
+    raytracing::VhxViewSet,
+};
 
 pub(crate) fn setup_mouse_action(
     mut commands: Commands,
@@ -13,10 +18,13 @@ pub(crate) fn setup_mouse_action(
 ) {
     for (entity, _) in action_query.iter() {
         commands.entity(entity).observe(
-            |trigger: Trigger<Pointer<Pressed>>, action_query: Query<(Entity, &mut UiAction)>| {
+            |trigger: Trigger<Pointer<Pressed>>,
+             mut ui_state: ResMut<UiState>,
+             action_query: Query<(Entity, &mut UiAction)>| {
                 for (entity, mut ui_action) in action_query {
                     if entity == trigger.target {
                         ui_action.is_active = true;
+                        ui_state.menu_interaction = true;
                     }
                 }
             },
@@ -34,27 +42,192 @@ pub(crate) fn setup_mouse_action(
             &Depth,
             &Slider,
             &Container,
-        )>| {
+        )>,
+         mut ui_state: ResMut<UiState>| {
             let (mut ui_action, _, _, _, _) = fov_slider
                 .single_mut()
                 .expect("Expected FOV Slider to be available in UI");
             ui_action.is_active = true;
+            ui_state.menu_interaction = true;
         },
     );
 }
 
 pub(crate) fn mouse_action_cleanup(
+    mut ui_state: ResMut<UiState>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut ui_action_items_query: Query<&mut UiAction>,
 ) {
     if buttons.just_released(MouseButton::Left) {
+        ui_state.menu_interaction = false;
         for mut item in ui_action_items_query.iter_mut() {
             item.is_active = false;
         }
     }
 }
 
-pub(crate) fn keyboard_input(
+fn direction_from_cam(cam: &PanOrbitCamera) -> Option<V3cf32> {
+    if let Some(radius) = cam.radius {
+        Some(
+            V3c::new(
+                radius / 2. + cam.yaw.unwrap().sin() * radius,
+                radius + cam.pitch.unwrap().sin() * radius * 2.,
+                radius / 2. + cam.yaw.unwrap().cos() * radius,
+            )
+            .normalized(),
+        )
+    } else {
+        None
+    }
+}
+
+pub(crate) fn handle_world_interaction_block_by_ui(
+    ui_state: Res<UiState>,
+    mut camera_query: Query<&mut PanOrbitCamera>,
+) {
+    let mut cam = camera_query
+        .single_mut()
+        .expect("Expected PanOrbitCamera to be available in ECS!");
+    if false == ui_state.menu_interaction && !cam.enabled {
+        cam.enabled = true;
+    } else if true == ui_state.menu_interaction && cam.enabled {
+        cam.enabled = false;
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CameraPosition {
+    focus: Vec3,
+    radius: f32,
+    yaw: f32,
+    pitch: f32,
+}
+
+impl Default for CameraPosition {
+    fn default() -> Self {
+        CameraPosition {
+            focus: Vec3::new(0., 0., 0.),
+            radius: 1.,
+            yaw: 0.,
+            pitch: 0.,
+        }
+    }
+}
+
+pub(crate) fn handle_camera_update(
+    mut pkv: ResMut<PkvStore>,
+    mut ui_state: ResMut<UiState>,
+    asset_server: Res<AssetServer>,
+    keys: Res<ButtonInput<KeyCode>>,
+    viewset: Option<ResMut<VhxViewSet>>,
+    mut camera_query: Query<&mut PanOrbitCamera>,
+    mut camera_locked_icon: Query<(&mut Sprite, &crate::ui::components::Camera, &Info)>,
+) {
+    // Camera locked icon
+    if keys.just_pressed(KeyCode::F4) {
+        let (mut camera_locked_icon, _, _) = camera_locked_icon
+            .single_mut()
+            .expect("Expected Camera Locked icon to be available in UI!");
+
+        ui_state.camera_locked = !ui_state.camera_locked;
+        if ui_state.camera_locked {
+            *camera_locked_icon = Sprite::from_image(asset_server.load("ui/lock_closed_icon.png"));
+        } else {
+            *camera_locked_icon = Sprite::from_image(asset_server.load("ui/lock_open_icon.png"));
+        }
+    }
+
+    // Camera movement
+    if let Some(viewset) = viewset {
+        if 0 == viewset.views.len() || ui_state.camera_locked {
+            return; // Nothing to do without views or a locked camera..
+        }
+
+        let mut cam = camera_query
+            .single_mut()
+            .expect("Expected PanOrbitCamera to be available in ECS!");
+
+        if let Some(_) = cam.radius {
+            let mut tree_view = viewset.views[0].lock().unwrap();
+            tree_view.spyglass.viewport_mut().origin =
+                V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
+            tree_view.spyglass.viewport_mut().direction = direction_from_cam(&cam).unwrap();
+        }
+
+        // Save camera position
+        if keys.just_pressed(KeyCode::F6)
+            && !keys.pressed(KeyCode::ControlLeft)
+            && !keys.pressed(KeyCode::ControlRight)
+        {
+            pkv.set(
+                "camera_position",
+                &CameraPosition {
+                    focus: cam.focus,
+                    radius: cam.radius.unwrap_or_else(|| 1.),
+                    yaw: cam.yaw.unwrap_or_else(|| 0.),
+                    pitch: cam.pitch.unwrap_or_else(|| 0.),
+                },
+            )
+            .expect("Expected to be able to store camera_position");
+        }
+
+        // Load camera position
+        if keys.just_pressed(KeyCode::F10) {
+            let pos = if let Ok(pos) = pkv.get::<CameraPosition>("camera_position") {
+                pos
+            } else {
+                CameraPosition::default()
+            };
+
+            cam.target_focus = pos.focus;
+            cam.target_radius = pos.radius;
+            cam.target_yaw = pos.yaw;
+            cam.target_pitch = pos.pitch;
+        }
+
+        // restore camera position to default
+        if keys.just_pressed(KeyCode::F6)
+            && (keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight))
+        {
+            let pos = CameraPosition::default();
+            pkv.set("camera_position", &pos)
+                .expect("Expected to be able to store camera_position");
+
+            cam.target_focus = pos.focus;
+            cam.target_radius = pos.radius;
+            cam.target_yaw = pos.yaw;
+            cam.target_pitch = pos.pitch;
+        }
+
+        // Camera control
+        if let Some(_) = cam.radius {
+            if keys.pressed(KeyCode::ShiftLeft) {
+                cam.target_focus.y += 1.;
+            }
+            if keys.pressed(KeyCode::ControlLeft) {
+                cam.target_focus.y -= 1.;
+            }
+
+            let dir = direction_from_cam(&cam).unwrap();
+            let dir = Vec3::new(dir.x, dir.y, dir.z);
+            let right = dir.cross(Vec3::new(0., 1., 0.));
+            if keys.pressed(KeyCode::KeyW) {
+                cam.target_focus += dir;
+            }
+            if keys.pressed(KeyCode::KeyS) {
+                cam.target_focus -= dir;
+            }
+            if keys.pressed(KeyCode::KeyA) {
+                cam.target_focus += right;
+            }
+            if keys.pressed(KeyCode::KeyD) {
+                cam.target_focus -= right;
+            }
+        }
+    }
+}
+
+pub(crate) fn handle_settings_update(
     keys: Res<ButtonInput<KeyCode>>,
     asset_server: Res<AssetServer>,
     mut pkv: ResMut<PkvStore>,
@@ -213,7 +386,10 @@ pub(crate) fn keyboard_input(
     let fov_bar_unit = fov_container_size.x / fov_bar_value_extent;
 
     // Saving settings: output_resolution, viewport_resolution, fov, view_distance
-    if keys.just_pressed(KeyCode::F5) {
+    if keys.just_pressed(KeyCode::F5)
+        && !keys.pressed(KeyCode::ControlLeft)
+        && !keys.pressed(KeyCode::ControlRight)
+    {
         pkv.set("output_resolution_width", &output_width_text.0)
             .expect("Failed to store value: output_resolution_width");
         pkv.set("output_resolution_height", &output_height_text.0)
@@ -318,7 +494,9 @@ pub(crate) fn keyboard_input(
     }
 
     // Restoring default settings
-    if keys.just_pressed(KeyCode::F11) {
+    if keys.just_pressed(KeyCode::F5)
+        && (keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight))
+    {
         pkv.set("output_resolution_width", &"1920")
             .expect("Failed to store value: output_resolution_width");
         pkv.set("output_resolution_height", &"1080")

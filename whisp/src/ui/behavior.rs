@@ -130,7 +130,7 @@ pub(crate) fn setup(
     )>,
     info_panel_button_mini: Query<
         (Entity, &Info, &crate::ui::components::Button),
-        Without<Expanded>,
+        (Without<Expanded>, Without<crate::ui::components::Camera>),
     >,
     info_panel_button_expanded: Query<
         (Entity, &Info, &crate::ui::components::Button),
@@ -148,7 +148,36 @@ pub(crate) fn setup(
         (Entity, &crate::ui::components::Camera, &Depth, &Slider),
         Without<Container>,
     >,
+    camera_locked_button: Query<(Entity, &crate::ui::components::Camera, &Info)>,
 ) {
+    // Camera locked button
+    let (camera_locked_button, _, _) = camera_locked_button
+        .single()
+        .expect("Expected Camera Locked Button to be available in UI");
+
+    commands.entity(camera_locked_button).observe(
+        move |_: Trigger<Pointer<Click>>,
+              mut ui_state: ResMut<UiState>,
+              asset_server: Res<AssetServer>,
+              mut camera_locked_icon: Query<(
+            &mut Sprite,
+            &crate::ui::components::Camera,
+            &Info,
+        )>| {
+            let (mut camera_locked_icon, _, _) = camera_locked_icon
+                .single_mut()
+                .expect("Expected Camera Locked icon to be available in UI!");
+            ui_state.camera_locked = !ui_state.camera_locked;
+            if ui_state.camera_locked {
+                *camera_locked_icon =
+                    Sprite::from_image(asset_server.load("ui/lock_closed_icon.png"));
+            } else {
+                *camera_locked_icon =
+                    Sprite::from_image(asset_server.load("ui/lock_open_icon.png"));
+            }
+        },
+    );
+
     // Viewport resolution linked
     let (viewport_resolution_link_button, _, _, _) = viewport_resolution_linked
         .single()
@@ -252,7 +281,7 @@ pub(crate) fn setup(
     );
 
     // FOV slider
-    let fov_slider_observer = |mouse_move: Trigger<Pointer<Move>>,
+    let fov_slider_observer = |mut mouse_move: Trigger<Pointer<Move>>,
                                mut ui_state: ResMut<UiState>,
                                fov_slider: Query<(
         &UiAction,
@@ -288,6 +317,7 @@ pub(crate) fn setup(
             ui_state.fov_value =
                 (ui_action.boundaries[0] as f32 + fov_bar_value_extent * fov_bar_percentage) as u32;
         }
+        mouse_move.propagate(false);
     };
 
     let (fov_slider, _, _, _, _, _) = fov_slider

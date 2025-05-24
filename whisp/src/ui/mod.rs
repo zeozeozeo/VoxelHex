@@ -8,6 +8,8 @@ pub(crate) mod layout;
 
 #[derive(Resource)]
 pub(crate) struct UiState {
+    pub(crate) camera_locked: bool,
+    pub(crate) menu_interaction: bool,
     pub(crate) model_loaded: bool,
     pub(crate) hide_ui: bool,
     pub(crate) hide_shortcuts: bool,
@@ -23,6 +25,13 @@ impl UiState {
     pub(crate) fn new(pkv: &PkvStore) -> Self {
         Self {
             model_loaded: false,
+            menu_interaction: false,
+            camera_locked: if let Ok(link) = pkv.get::<String>("camera_locked") {
+                link.parse::<bool>()
+                    .expect("Expected camera_locked setting to be either 'true' or 'false'")
+            } else {
+                true
+            },
             hide_ui: if let Ok(link) = pkv.get::<String>("ui_hidden") {
                 link.parse::<bool>()
                     .expect("Expected ui_hidden setting to be either 'true' or 'false'")
