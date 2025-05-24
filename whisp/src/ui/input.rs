@@ -275,28 +275,28 @@ pub(crate) fn keyboard_input(
         ui_state.output_resolution = [
             output_width_text
                 .0
-                .parse::<i32>()
+                .parse::<u32>()
                 .expect("Expected output_resolution_width setting to be a parsable number"),
             output_height_text
                 .0
-                .parse::<i32>()
+                .parse::<u32>()
                 .expect("Expected output_resolution_height setting to be a parsable number"),
         ];
 
         ui_state.viewport_resolution = [
             viewport_width_text
                 .0
-                .parse::<i32>()
+                .parse::<u32>()
                 .expect("Expected viewport_resolution_width setting to be a parsable number"),
             viewport_height_text
                 .0
-                .parse::<i32>()
+                .parse::<u32>()
                 .expect("Expected viewport_resolution_width setting to be a parsable number"),
         ];
 
         ui_state.view_distance = view_distance_text
             .0
-            .parse::<i32>()
+            .parse::<u32>()
             .expect("Expected view distance setting to be a parsable number");
 
         ui_state.output_resolution_linked = if let Ok(link) =

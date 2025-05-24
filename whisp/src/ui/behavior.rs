@@ -14,8 +14,8 @@ enum ResolutionUpdated {
 #[event(auto_propagate)]
 pub(crate) struct OutputResolutionUpdated {
     by: ResolutionUpdated,
-    from: i32,
-    to: i32,
+    from: u32,
+    to: u32,
 }
 
 pub(crate) fn resolution_changed_observer(
@@ -70,7 +70,7 @@ pub(crate) fn resolution_changed_observer(
                 .expect("Expected Output Height to be a parsable integer!")
                 as f32
                 / update.from as f32;
-            let new_height = (update.to as f32 * ratio) as i32;
+            let new_height = (update.to as f32 * ratio) as u32;
             height_text.0 = new_height.to_string();
             ui_state.output_resolution[1] = new_height;
         }
@@ -84,7 +84,7 @@ pub(crate) fn resolution_changed_observer(
                 .expect("Expected Output Width to be a parsable integer!")
                 as f32
                 / update.from as f32;
-            let new_width = (update.to as f32 * ratio) as i32;
+            let new_width = (update.to as f32 * ratio) as u32;
             width_text.0 = new_width.to_string();
             ui_state.output_resolution[0] = new_width;
         }
@@ -98,7 +98,7 @@ pub(crate) fn resolution_changed_observer(
                 .expect("Expected Viewport Height to be a parsable integer!")
                 as f32
                 / update.from as f32;
-            let new_height = (update.to as f32 * ratio) as i32;
+            let new_height = (update.to as f32 * ratio) as u32;
             height_text.0 = new_height.to_string();
             ui_state.viewport_resolution[1] = new_height;
         }
@@ -112,7 +112,7 @@ pub(crate) fn resolution_changed_observer(
                 .expect("Expected Viewport Height to be a parsable integer!")
                 as f32
                 / update.from as f32;
-            let new_width = (update.to as f32 * ratio) as i32;
+            let new_width = (update.to as f32 * ratio) as u32;
             width_text.0 = new_width.to_string();
             ui_state.viewport_resolution[0] = new_width;
         }
@@ -286,7 +286,7 @@ pub(crate) fn setup(
             let fov_bar_value_extent = (ui_action.boundaries[1] - ui_action.boundaries[0]) as f32;
             let fov_bar_percentage = (bar_size.x / container_size.x) as f32;
             ui_state.fov_value =
-                (ui_action.boundaries[0] as f32 + fov_bar_value_extent * fov_bar_percentage) as i32;
+                (ui_action.boundaries[0] as f32 + fov_bar_value_extent * fov_bar_percentage) as u32;
         }
     };
 
@@ -302,12 +302,12 @@ pub(crate) fn setup(
     commands.entity(fov_slider_bar).observe(fov_slider_observer);
 }
 
-fn update_number(number: i32, update_motion: &Vec2, ui_action: &UiAction) -> i32 {
+fn update_number(number: u32, update_motion: &Vec2, ui_action: &UiAction) -> u32 {
     let update_count = update_motion.x - update_motion.y;
     let mut new_number =
-        (number as f32 * (1. + ui_action.change_sensitivity * (update_count as f32 / 4.))) as i32;
+        (number as f32 * (1. + ui_action.change_sensitivity * (update_count as f32 / 4.))) as u32;
     if new_number == number && 0. != update_count {
-        new_number += update_count.signum() as i32;
+        new_number += update_count.signum() as u32;
     }
     new_number.clamp(ui_action.boundaries[0], ui_action.boundaries[1])
 }
@@ -380,7 +380,7 @@ pub(crate) fn update(
     if ui_action.is_active {
         let distance = text
             .0
-            .parse::<i32>()
+            .parse::<u32>()
             .expect("Expected viewport width text to be parsable as number");
         let new_distance = update_number(distance, &mouse_update_motion, ui_action);
         text.0 = new_distance.to_string();
@@ -394,7 +394,7 @@ pub(crate) fn update(
     if ui_action.is_active {
         let width = text
             .0
-            .parse::<i32>()
+            .parse::<u32>()
             .expect("Expected viewport width text to be parsable as number");
         let new_width = update_number(width, &mouse_update_motion, ui_action);
         text.0 = new_width.to_string();
@@ -415,7 +415,7 @@ pub(crate) fn update(
     if ui_action.is_active {
         let height = text
             .0
-            .parse::<i32>()
+            .parse::<u32>()
             .expect("Expected viewport height text to be parsable as number");
         let new_height = update_number(height, &mouse_update_motion, ui_action);
         text.0 = new_height.to_string();
@@ -436,7 +436,7 @@ pub(crate) fn update(
     if ui_action.is_active {
         let width = text
             .0
-            .parse::<i32>()
+            .parse::<u32>()
             .expect("Expected text to be parsable as number");
         let new_width = update_number(width, &mouse_update_motion, ui_action);
         ui_state.viewport_resolution[0] = new_width;
@@ -458,7 +458,7 @@ pub(crate) fn update(
     if ui_action.is_active {
         let height = text
             .0
-            .parse::<i32>()
+            .parse::<u32>()
             .expect("Expected text to be parsable as number");
         let new_height = update_number(height, &mouse_update_motion, ui_action);
         text.0 = new_height.to_string();

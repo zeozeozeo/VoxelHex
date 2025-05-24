@@ -4,7 +4,7 @@ use bevy::prelude::Component;
 pub(crate) struct UiAction {
     pub(crate) is_active: bool,
     pub(crate) change_sensitivity: f32,
-    pub(crate) boundaries: [i32; 2],
+    pub(crate) boundaries: [u32; 2],
 }
 
 #[derive(Component)]

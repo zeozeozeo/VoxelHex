@@ -6,7 +6,7 @@ fn icon() -> UiLayout {
     UiLayout::window().pos(Ab(4.)).width(24.).height(24.).pack()
 }
 
-pub(crate) fn fov_to_x(fov: u32, size_x: f32, boundaries: [i32; 2]) -> f32 {
+pub(crate) fn fov_to_x(fov: u32, size_x: f32, boundaries: [u32; 2]) -> f32 {
     debug_assert!(
         boundaries[0] <= boundaries[1],
         "Expected valid fov boundaries instead of {:?}",
@@ -641,13 +641,21 @@ Mouse Click - clikity
                 });
 
             // render texture
+            let mut sprite = Sprite::from_color(Color::srgb(1., 0., 0.), Vec2::new(1920.0, 1080.0));
+            sprite.custom_size = Some(Vec2::new(
+                1920.0,
+                1080.0,
+            ));
             ui_root.spawn((
+                crate::ui::components::Model,
+                crate::ui::components::Output,
+                crate::ui::components::Container,
                 UiLayout::solid()
                     .size((2., 1.))
                     .align_x(0.)
                     .align_y(0.)
                     .pack(),
-                Sprite::from_color(Color::srgb(0., 0., 0.), Vec2::new(1920.0, 1080.0)),
+                sprite,
             ));
         });
 }
