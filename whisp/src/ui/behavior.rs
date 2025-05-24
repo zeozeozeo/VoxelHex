@@ -1,4 +1,7 @@
-use crate::{ui::components::*, ui::UiState};
+use crate::{
+    loader::TreeLoadingTask,
+    ui::{components::*, UiState},
+};
 use bevy::{input::mouse::MouseMotion, prelude::*};
 use bevy_lunex::prelude::*;
 use bevy_pkv::PkvStore;
@@ -16,6 +19,83 @@ pub(crate) struct OutputResolutionUpdated {
     by: ResolutionUpdated,
     from: u32,
     to: u32,
+}
+
+#[derive(Resource)]
+pub(crate) struct ModelLoadAnimationState {
+    value_range: u32,
+    bottom_value: u32,
+    top_value: u32,
+    speed: f32,
+    spread: f32,
+}
+
+pub(crate) fn handle_model_load_animation(
+    tree_factory: Option<ResMut<TreeLoadingTask>>,
+    mut animation_state: ResMut<ModelLoadAnimationState>,
+    progress_bar_panel: Query<(&Dimension, &Model, &Loading, &Slider, &Container)>,
+    mut progress_bar: Query<
+        (&mut Dimension, &mut Transform, &Model, &Loading, &Slider),
+        Without<Container>,
+    >,
+) {
+    let (container_size, _, _, _, _) = progress_bar_panel
+        .single()
+        .expect("Expected Model Load progress bar container to be available in UI");
+    let (mut progress_bar_size, mut progress_bar_transform, _, _, _) = progress_bar
+        .single_mut()
+        .expect("Expected Model Load progress bar to be available in UI");
+
+    if tree_factory.is_some() {
+        // Calculate the required position
+        let expected_value_size = animation_state.value_range as f32 * animation_state.spread;
+        let actual_value_size =
+        // Without the magic number the start of the bar doesn't snuggly fit into the container
+            (animation_state.top_value - animation_state.bottom_value + 10) as f32;
+        let value_delta = (animation_state.value_range as f32 * animation_state.speed) as u32;
+        let value_delta = value_delta.min(animation_state.value_range / 2);
+        let squished = expected_value_size > actual_value_size;
+        if squished && animation_state.bottom_value == 0 {
+            // In case the bar is at the start, only increase the top value
+            animation_state.top_value += value_delta;
+        } else if squished && animation_state.top_value == animation_state.value_range {
+            // in case the bar is at the end
+            animation_state.bottom_value += value_delta;
+        } else {
+            // In case the bar is in the middle
+            animation_state.bottom_value += value_delta;
+            animation_state.top_value += value_delta;
+        }
+
+        animation_state.bottom_value = animation_state
+            .bottom_value
+            .min(animation_state.value_range);
+        animation_state.top_value = animation_state.top_value.min(animation_state.value_range);
+
+        if animation_state.value_range == animation_state.bottom_value
+            && animation_state.value_range == animation_state.top_value
+        {
+            animation_state.bottom_value = 0;
+            animation_state.top_value = 0;
+        }
+
+        // Set progress bars position
+        let size_percentage = actual_value_size as f32 / animation_state.value_range as f32;
+        let value_mid = (animation_state.bottom_value + animation_state.top_value) as f32 / 2.;
+        let value_mid_percentage = value_mid / animation_state.value_range as f32;
+        progress_bar_size.x = container_size.x * size_percentage;
+        progress_bar_transform.translation.x =
+            -(0.5 - value_mid_percentage * container_size.x) - container_size.x * 0.5;
+        animation_state.speed += 0.0001;
+    } else {
+        // The prorgess bar should be full when the model isn't loading
+        progress_bar_size.x = container_size.x;
+        progress_bar_transform.translation.x = 0.;
+
+        animation_state.top_value = 0;
+        animation_state.bottom_value = 0;
+        animation_state.speed = 0.01;
+    }
 }
 
 pub(crate) fn resolution_changed_observer(
@@ -150,6 +230,14 @@ pub(crate) fn setup(
     >,
     camera_locked_button: Query<(Entity, &crate::ui::components::Camera, &Info)>,
 ) {
+    commands.insert_resource(ModelLoadAnimationState {
+        value_range: 1000,
+        top_value: 0,
+        bottom_value: 0,
+        speed: 0.01,
+        spread: 0.2,
+    });
+
     // Camera locked button
     let (camera_locked_button, _, _) = camera_locked_button
         .single()
@@ -519,15 +607,5 @@ pub(crate) fn update(
     if keys.just_pressed(KeyCode::Digit0) {
         (progressbar_size.x, progressbar_transform.translation.x) =
             progressbar_xtrinsics_fn(0., loading_panel_size);
-    }
-}
-
-pub(crate) fn messages(mut status_text: Query<(&mut Text2d, &Model, &Status)>) {
-    #[cfg(debug_assertions)]
-    {
-        let (mut message_text, _, _) = status_text
-            .single_mut()
-            .expect("Expected Status message to be available in UI");
-        message_text.0 = "WARNING! Running in Debug mode! Perfromance will be bad!".to_string();
     }
 }

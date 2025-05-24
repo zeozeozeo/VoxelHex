@@ -138,8 +138,8 @@ pub(crate) fn handle_camera_update(
     }
 
     // Camera movement
-    if let Some(viewset) = viewset {
-        if 0 == viewset.views.len() || ui_state.camera_locked {
+    if let Some(mut viewset) = viewset {
+        if 0 == viewset.len() || ui_state.camera_locked {
             return; // Nothing to do without views or a locked camera..
         }
 
@@ -148,7 +148,7 @@ pub(crate) fn handle_camera_update(
             .expect("Expected PanOrbitCamera to be available in ECS!");
 
         if let Some(_) = cam.radius {
-            let mut tree_view = viewset.views[0].lock().unwrap();
+            let mut tree_view = viewset.view_mut(0);
             tree_view.spyglass.viewport_mut().origin =
                 V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
             tree_view.spyglass.viewport_mut().direction = direction_from_cam(&cam).unwrap();

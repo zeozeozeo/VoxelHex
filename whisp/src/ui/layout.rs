@@ -75,17 +75,13 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                     ));
                                     ui_modelname_field.spawn((
                                         crate::ui::components::Model,
-                                        UiLayout::window()
-                                            .anchor(Anchor::TopLeft)
-                                            .pos(Ab((32., 4.)))
-                                            .width(Rl(100.) - Ab(37.))
-                                            .height(Ab(25.))
-                                            .pack(),
+                                        crate::ui::components::Info,
+                                        UiLayout::solid().scaling(Scaling::Fill).pack(),
                                         UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
                                         Text2d::new(
                                             pkv.get::<String>("model_name").ok().unwrap_or_else(
                                                 || {
-                                                    "gingerbread_house_by_kirra_luan(1024^3)"
+                                                    "             model(size^3)             "
                                                         .to_string()
                                                 },
                                             ),
@@ -238,6 +234,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 .with_children(|ui_versions_panel| {
                                     ui_versions_panel.spawn((
                                         crate::ui::components::Model,
+                                        crate::ui::components::Version,
                                         crate::ui::components::Info,
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
@@ -313,19 +310,6 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                                     .size((400.0, 20.0))
                                                     .pack(),
                                                 UiColor::from(Color::srgb(0., 0., 0.)),
-                                                UiTextSize::from(Rh(95.0)),
-                                                Text2d::new(""),
-                                            ));
-
-                                            ui_loading_bar_padding.spawn((
-                                                crate::ui::components::Model,
-                                                crate::ui::components::Status,
-                                                UiLayout::solid()
-                                                    .scaling(Scaling::VerFill)
-                                                    .align_x(1.)
-                                                    .size((400.0, 20.0))
-                                                    .pack(),
-                                                UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
                                                 UiTextSize::from(Rh(95.0)),
                                                 Text2d::new(""),
                                             ));
@@ -621,11 +605,8 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 OnHoverSetCursor::new(SystemCursorIcon::Pointer),
                             ));
 
-                            ui_shortcuts_panel.spawn((
-                                UiLayout::solid().scaling(Scaling::Fit).align_x(1.).pack(),
-                                UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
-                                Text2d::new(
-                                    "
+                            let mut shortcuts_panel_string =
+"
       G     - hide UI
       F4    - Lock Camera
       F5    - Save Settings
@@ -646,8 +627,24 @@ Drag Buttons to update values!
 Drag&Drop files to open them!
 (Magicavoxel format)
 ---------------------------------
-",
-                                ),
+"
+                            .to_string();
+                            #[cfg(debug_assertions)] {
+                                shortcuts_panel_string =
+"
+---------------------------------
+You are using a debug build!
+Performance is going to be slow!
+---------------------------------
+"
+                                .to_string() + &shortcuts_panel_string;
+                            }
+
+
+                            ui_shortcuts_panel.spawn((
+                                UiLayout::solid().scaling(Scaling::Fit).align_x(1.).pack(),
+                                UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
+                                Text2d::new(shortcuts_panel_string),
                             ));
                         });
 

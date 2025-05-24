@@ -6,3 +6,5 @@
 perf.data*
 *junk*
 *.sublime-*
+*.cache_*
+*.tmp_cache_*

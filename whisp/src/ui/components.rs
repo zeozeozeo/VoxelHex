@@ -38,6 +38,9 @@ pub(crate) struct Output;
 pub(crate) struct Status;
 
 #[derive(Component)]
+pub(crate) struct Version;
+
+#[derive(Component)]
 pub(crate) struct Performance;
 
 #[derive(Component)]
