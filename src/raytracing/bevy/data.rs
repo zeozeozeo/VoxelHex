@@ -17,7 +17,7 @@ use bendy::{decoding::FromBencode, encoding::ToBencode};
 use bevy::{
     ecs::system::{Res, ResMut},
     math::Vec4,
-    prelude::{Assets, Commands, Image},
+    prelude::{Assets, Image},
     render::{
         render_resource::{
             encase::{internal::WriteInto, StorageBuffer, UniformBuffer},
@@ -149,6 +149,7 @@ impl<
             rebuild: false,
             init_data_sent: false,
             data_ready: false,
+            new_images_ready: true,
             new_resolution: None,
             new_output_texture: None,
             new_depth_texture: None,
@@ -166,21 +167,6 @@ impl<
 
         debug_assert_eq!(viewset.resources.len(), viewset.views.len());
         viewset.views.len() - 1
-    }
-}
-
-/// Handles data sync between Bevy main(CPU) world and rendering world
-pub(crate) fn sync_from_main_world(
-    mut commands: Commands,
-    mut world: ResMut<bevy::render::MainWorld>,
-    render_world_viewset: Option<Res<VhxViewSet>>,
-) {
-    if let Some(mut main_world_viewset) = world.get_resource_mut::<VhxViewSet>() {
-        if render_world_viewset.is_none() || main_world_viewset.changed {
-            commands.insert_resource(main_world_viewset.clone());
-            main_world_viewset.changed = false;
-            return;
-        }
     }
 }
 
@@ -243,58 +229,58 @@ pub(crate) fn handle_gpu_readback(
     mut viewset: Option<ResMut<VhxViewSet>>,
     mut vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
 ) {
-    if let (Some(_vhx_pipeline), Some(viewset)) = (vhx_pipeline.as_mut(), viewset.as_mut()) {
-        if 0 == viewset.views.len() {
-            return; // Nothing to do without views..
-        }
+    let (Some(_vhx_pipeline), Some(viewset)) = (vhx_pipeline.as_mut(), viewset.as_mut()) else {
+        return; // Nothing to without the pipeline or a viewset
+    };
+    if viewset.is_empty() {
+        return; // Nothing to do without views..
+    }
+    let mut view = viewset.views[0].write().unwrap();
+    let resources = viewset.resources[0].as_ref();
 
-        let mut view = viewset.views[0].write().unwrap();
-        let resources = viewset.resources[0].as_ref();
+    if resources.is_some() {
+        let resources = resources.unwrap();
 
-        if resources.is_some() {
-            let resources = resources.unwrap();
-
-            // init sequence: checking if data is written to the GPU yet
-            if view.init_data_sent && !view.data_ready {
-                let mut received_value = Vec::new();
-                read_buffer(
-                    &render_device,
-                    &resources.readable_used_bits_buffer,
-                    0..1,
-                    &mut received_value,
-                );
-                if view.data_handler.render_data.used_bits[0] == received_value[0] {
-                    view.data_ready = true;
-                }
-            }
-
-            // Read node requests
+        // init sequence: checking if data is written to the GPU yet
+        if view.init_data_sent && !view.data_ready {
+            let mut received_value = Vec::new();
             read_buffer(
                 &render_device,
-                &resources.readable_node_requests_buffer,
-                0..view.spyglass.node_requests.len(),
-                &mut view.spyglass.node_requests,
+                &resources.readable_used_bits_buffer,
+                0..1,
+                &mut received_value,
             );
-
-            let any_nodes_requested = {
-                let mut is_metadata_required_this_loop = false;
-                for node_request in &view.spyglass.node_requests {
-                    if *node_request != empty_marker::<u32>() {
-                        is_metadata_required_this_loop = true;
-                        break;
-                    }
-                }
-                is_metadata_required_this_loop
-            };
-
-            if any_nodes_requested && view.data_ready {
-                read_buffer(
-                    &render_device,
-                    &resources.readable_used_bits_buffer,
-                    0..view.data_handler.render_data.used_bits.len(),
-                    &mut view.data_handler.render_data.used_bits,
-                );
+            if view.data_handler.render_data.used_bits[0] == received_value[0] {
+                view.data_ready = true;
             }
+        }
+
+        // Read node requests
+        read_buffer(
+            &render_device,
+            &resources.readable_node_requests_buffer,
+            0..view.spyglass.node_requests.len(),
+            &mut view.spyglass.node_requests,
+        );
+
+        let any_nodes_requested = {
+            let mut is_metadata_required_this_loop = false;
+            for node_request in &view.spyglass.node_requests {
+                if *node_request != empty_marker::<u32>() {
+                    is_metadata_required_this_loop = true;
+                    break;
+                }
+            }
+            is_metadata_required_this_loop
+        };
+
+        if any_nodes_requested && view.data_ready {
+            read_buffer(
+                &render_device,
+                &resources.readable_used_bits_buffer,
+                0..view.data_handler.render_data.used_bits.len(),
+                &mut view.data_handler.render_data.used_bits,
+            );
         }
     }
 }
@@ -397,7 +383,7 @@ pub(crate) fn write_to_gpu<
         tree_gpu_host.as_mut(),
         viewset.as_mut(),
     ) {
-        if 0 == viewset.views.len() {
+        if viewset.is_empty() {
             return; // Nothing to do without views..
         }
 

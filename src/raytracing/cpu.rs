@@ -346,7 +346,7 @@ impl<
                 (ray.origin, OOB_SECTANT, current_bounds)
             };
         let mut current_node_key: usize;
-        let mut mip_level = (self.boxtree_size as f32 / self.brick_dim as f32).log2();
+        let mut mip_level = (self.boxtree_size as f32 / self.brick_dim as f32).log(4.);
 
         while target_sectant != OOB_SECTANT {
             current_node_key = Self::ROOT_NODE_KEY as usize;

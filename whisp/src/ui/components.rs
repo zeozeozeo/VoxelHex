@@ -1,7 +1,8 @@
 use bevy::prelude::Component;
 
-#[derive(Component)]
+#[derive(Default, Component)]
 pub(crate) struct UiAction {
+    pub(crate) triggered: bool,
     pub(crate) is_active: bool,
     pub(crate) change_sensitivity: f32,
     pub(crate) boundaries: [u32; 2],

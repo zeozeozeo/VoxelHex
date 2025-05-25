@@ -121,7 +121,7 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
         images,
     );
     commands.insert_resource(host);
-    let mut display = Sprite::from_image(views.view(view_index).output_texture().clone());
+    let mut display = Sprite::from_image(views.view(view_index).unwrap().output_texture().clone());
     display.custom_size = Some(Vec2::new(
         DISPLAY_RESOLUTION[0] as f32,
         DISPLAY_RESOLUTION[1] as f32,
@@ -167,7 +167,9 @@ fn set_viewport_for_camera(
         .single()
         .expect("Expecet PanOrbitCamera to be available");
     if let Some(_) = cam.radius {
-        let mut tree_view = view_set.view_mut(0);
+        let Some(mut tree_view) = view_set.view_mut(0) else {
+            return; // Nothing to do without views!
+        };
         tree_view.spyglass.viewport_mut().origin = V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
         tree_view.spyglass.viewport_mut().direction = direction_from_cam(cam).unwrap();
     }
@@ -180,7 +182,9 @@ fn handle_zoom(
     mut view_set: ResMut<VhxViewSet>,
     mut camera_query: Query<&mut PanOrbitCamera>,
 ) {
-    let mut tree_view = view_set.view_mut(0);
+    let Some(mut tree_view) = view_set.view_mut(0) else {
+        return; // Nothing to do without views!
+    };
 
     if keys.pressed(KeyCode::Tab) {
         // Render the current view with CPU

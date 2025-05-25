@@ -49,7 +49,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                 .with_children(|ui_hidable| {
                     // Model and properties
                     ui_hidable
-                        .spawn((UiLayout::solid().align_x(-1.).align_y(-1.)).pack())
+                        .spawn(UiLayout::window().pos(Ab((0., 0.))).size(Ab((5.,5.))).pack())
                         .with_children(|ui_model_panel| {
                             // model name panel
                             ui_model_panel
@@ -76,7 +76,11 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                     ui_modelname_field.spawn((
                                         crate::ui::components::Model,
                                         crate::ui::components::Info,
-                                        UiLayout::solid().scaling(Scaling::Fill).pack(),
+                                        UiLayout::window()
+                                        .anchor(Anchor::TopLeft)
+                                        .pos(Ab((0., 0.)))
+                                        .size(Ab((768.0, 32.0)))
+                                        .pack(),
                                         UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
                                         Text2d::new(
                                             pkv.get::<String>("model_name").ok().unwrap_or_else(
@@ -86,8 +90,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                                 },
                                             ),
                                         ),
-                                        OnHoverSetCursor::new(SystemCursorIcon::Pointer),
+                                        OnHoverSetCursor::new(SystemCursorIcon::Pointer),//TODO: THis need not be a pointer
                                     ));
+
                                 });
 
                             // resolution panel
@@ -133,9 +138,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         crate::ui::components::Width,
                                         crate::ui::components::Button,
                                         crate::ui::components::UiAction {
-                                            is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [128, 7680],
+                                            ..default()
                                         },
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
@@ -168,9 +173,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         crate::ui::components::Height,
                                         crate::ui::components::Button,
                                         crate::ui::components::UiAction {
-                                            is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [72, 4320],
+                                            ..default()
                                         },
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
@@ -193,6 +198,13 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             // Performance panel
                             ui_model_panel
                                 .spawn((
+                                    if hide_ui {
+                                        Visibility::Hidden
+                                    } else {
+                                        Visibility::Visible
+                                    },
+                                    crate::ui::components::Performance,
+                                    crate::ui::components::Container,
                                     UiLayout::window()
                                         .anchor(Anchor::TopLeft)
                                         .pos(Ab((210., 40.)))
@@ -351,9 +363,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                     crate::ui::components::Slider,
                                     crate::ui::components::Container,
                                     crate::ui::components::UiAction {
-                                        is_active: false,
                                         change_sensitivity: 0.01,
                                         boundaries: fov_value_bounds,
+                                        ..default()
                                     },
                                     UiLayout::window()
                                         .anchor(Anchor::TopLeft)
@@ -445,9 +457,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         crate::ui::components::Width,
                                         crate::ui::components::Button,
                                         crate::ui::components::UiAction {
-                                            is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [5, 250],
+                                            ..default()
                                         },
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
@@ -481,9 +493,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                         crate::ui::components::Height,
                                         crate::ui::components::Button,
                                         crate::ui::components::UiAction {
-                                            is_active: false,
                                             change_sensitivity: 0.005,
                                             boundaries: [5, 250],
+                                            ..default()
                                         },
                                         UiLayout::window()
                                             .anchor(Anchor::TopLeft)
@@ -519,9 +531,9 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 crate::ui::components::Depth,
                                 crate::ui::components::Button,
                                 crate::ui::components::UiAction {
-                                    is_active: false,
                                     change_sensitivity: 0.005,
                                     boundaries: [10, 500000],
+                                    ..default()
                                 },
                                 UiLayout::window()
                                     .anchor(Anchor::TopLeft)
@@ -608,6 +620,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                             let mut shortcuts_panel_string =
 "
       G     - hide UI
+      F     - Toggle FPS Panel
       F4    - Lock Camera
       F5    - Save Settings
 (ctrl)F5    - Restore defaults
@@ -629,7 +642,7 @@ Drag&Drop files to open them!
 ---------------------------------
 "
                             .to_string();
-                            #[cfg(debug_assertions)] {
+                            if cfg!(debug_assertions) {
                                 shortcuts_panel_string =
 "
 ---------------------------------
@@ -665,10 +678,10 @@ Performance is going to be slow!
                                 .size(Ab((32.0, 32.0)))
                                 .pack(),
                                 OnHoverSetCursor::new(SystemCursorIcon::Pointer),
-                                if let Ok(link) =
+                                if let Ok(locked) =
                                     pkv.get::<String>("camera_locked")
                                 {
-                                    if link.parse::<bool>()
+                                    if locked.parse::<bool>()
                                         .expect("Expected camera_locked setting to be either 'true' or 'false'")
                                     {
                                         Sprite::from_image(asset_server.load("ui/lock_closed_icon.png"))

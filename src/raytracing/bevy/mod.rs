@@ -10,7 +10,7 @@ pub use crate::raytracing::bevy::types::{
 use crate::{
     boxtree::{Albedo, V3cf32, VoxelData},
     raytracing::bevy::{
-        data::{handle_gpu_readback, sync_from_main_world, write_to_gpu},
+        data::{handle_gpu_readback, write_to_gpu},
         pipeline::prepare_bind_groups,
         types::{VhxLabel, VhxRenderNode, VhxRenderPipeline},
     },
@@ -18,14 +18,15 @@ use crate::{
 use bendy::{decoding::FromBencode, encoding::ToBencode};
 use bevy::{
     app::{App, Plugin},
-    asset::LoadState,
     ecs::prelude::IntoScheduleConfigs,
-    prelude::{AssetServer, Assets, ExtractSchedule, Handle, Image, Res, ResMut, Update, Vec4},
+    prelude::{Assets, Commands, ExtractSchedule, Handle, Image, Res, ResMut, Update, Vec4},
     render::{
         extract_resource::ExtractResourcePlugin,
         render_asset::RenderAssetUsages,
+        render_asset::RenderAssets,
         render_graph::RenderGraph,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+        texture::GpuImage,
         Render, RenderApp, RenderSet,
     },
 };
@@ -55,6 +56,12 @@ impl From<Albedo> for Vec4 {
     }
 }
 
+impl Default for VhxViewSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VhxViewSet {
     pub fn new() -> Self {
         Self {
@@ -74,31 +81,59 @@ impl VhxViewSet {
         self.views.len()
     }
 
+    /// True if the viewset is empty
+    pub fn is_empty(&self) -> bool {
+        0 == self.len()
+    }
+
     /// Provides a view for immutable access; Blocks until view is available
-    pub fn view(&self, index: usize) -> RwLockReadGuard<'_, BoxTreeGPUView> {
-        self.views[index]
-            .read()
-            .expect("Expected to be able to lock data view")
+    pub fn view(&self, index: usize) -> Option<RwLockReadGuard<'_, BoxTreeGPUView>> {
+        if index < self.views.len() {
+            Some(
+                self.views[index]
+                    .read()
+                    .expect("Expected to be able to lock data view for read access"),
+            )
+        } else {
+            None
+        }
     }
 
     /// Tries to provide a view for immutable access; Fails if view is not available
-    pub fn try_view(&self, index: usize) -> TryLockResult<RwLockReadGuard<'_, BoxTreeGPUView>> {
-        self.views[index].try_read()
+    pub fn try_view(
+        &self,
+        index: usize,
+    ) -> Option<TryLockResult<RwLockReadGuard<'_, BoxTreeGPUView>>> {
+        if index < self.views.len() {
+            Some(self.views[index].try_read())
+        } else {
+            None
+        }
     }
 
     /// Provides a view for mutable access; Blocks until view is available
-    pub fn view_mut(&mut self, index: usize) -> RwLockWriteGuard<'_, BoxTreeGPUView> {
-        self.views[index]
-            .write()
-            .expect("Expected to be able to lock data view")
+    pub fn view_mut(&mut self, index: usize) -> Option<RwLockWriteGuard<'_, BoxTreeGPUView>> {
+        if index < self.views.len() {
+            Some(
+                self.views[index]
+                    .write()
+                    .expect("Expected to be able to lock data view for write access"),
+            )
+        } else {
+            None
+        }
     }
 
     /// Tries to provide a view for mutable access; Fails if view is not available
     pub fn try_view_mut(
         &mut self,
         index: usize,
-    ) -> TryLockResult<RwLockWriteGuard<'_, BoxTreeGPUView>> {
-        self.views[index].try_write()
+    ) -> Option<TryLockResult<RwLockWriteGuard<'_, BoxTreeGPUView>>> {
+        if index < self.views.len() {
+            Some(self.views[index].try_write())
+        } else {
+            None
+        }
     }
 
     /// Empties the viewset erasing all contained views
@@ -133,6 +168,7 @@ impl BoxTreeGPUView {
             self.new_output_texture = Some(create_output_texture(resolution, images));
             self.new_depth_texture = Some(create_depth_texture(resolution, images));
             self.rebuild = true;
+            self.new_images_ready = false;
             self.new_output_texture.as_ref().unwrap().clone_weak()
         } else {
             self.spyglass.output_texture.clone_weak()
@@ -162,6 +198,7 @@ impl BoxTreeSpyGlass {
 }
 
 impl Viewport {
+    /// Creates a viewport based on the given parameters
     pub fn new(origin: V3cf32, direction: V3cf32, frustum: V3cf32, fov: f32) -> Self {
         Self {
             origin,
@@ -205,11 +242,12 @@ pub(crate) fn create_output_texture(
         TextureDimension::D2,
         &[0, 0, 0, 255],
         TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     );
-    output_texture.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
-
+    output_texture.texture_descriptor.usage = TextureUsages::COPY_DST
+        | TextureUsages::STORAGE_BINDING
+        | TextureUsages::TEXTURE_BINDING
+        | TextureUsages::RENDER_ATTACHMENT;
     images.add(output_texture)
 }
 
@@ -236,48 +274,81 @@ pub(crate) fn create_depth_texture(
     images.add(depth_texture)
 }
 
-pub(crate) fn handle_resolution_updates(
-    mut viewset: Option<ResMut<VhxViewSet>>,
-    images: ResMut<Assets<Image>>,
-    server: Res<AssetServer>,
-) {
+fn handle_resolution_updates_main_world(mut viewset: Option<ResMut<VhxViewSet>>) {
     if let Some(viewset) = viewset.as_mut() {
-        if 0 == viewset.views.len() {
+        if viewset.is_empty() {
             return; // Nothing to do without views..
         }
         let mut current_view = viewset.views[0].write().unwrap();
-        if current_view.new_resolution.is_some() {
-            // see if a new output texture is loaded for the requested resolution yet
-            let new_out_tex = current_view
-                .new_output_texture
-                .as_ref()
-                .unwrap()
-                .clone_weak();
-            if images.get(&new_out_tex).is_some()
-                || matches!(server.get_load_state(&new_out_tex), Some(LoadState::Loaded))
-            {
-                current_view.resolution = current_view.new_resolution.take().unwrap();
-                current_view.spyglass.output_texture =
-                    current_view.new_output_texture.clone().unwrap();
-            }
+        if current_view.new_images_ready && current_view.new_resolution.is_some() {
+            current_view.resolution = current_view.new_resolution.take().unwrap();
+            current_view.spyglass.output_texture = current_view.new_output_texture.clone().unwrap();
+            current_view.spyglass.depth_texture = current_view.new_depth_texture.clone().unwrap();
         }
+    }
+}
 
-        if current_view.new_depth_texture.is_some() {
-            let new_depth_tex = current_view
-                .new_depth_texture
-                .as_ref()
-                .unwrap()
-                .clone_weak();
-            if images.get(&new_depth_tex).is_some()
-                || matches!(
-                    server.get_load_state(&new_depth_tex),
-                    Some(LoadState::Loaded)
-                )
-            {
-                current_view.spyglass.depth_texture =
-                    current_view.new_depth_texture.clone().unwrap();
+fn handle_resolution_updates_render_world(
+    gpu_images: Res<RenderAssets<GpuImage>>,
+    mut viewset: Option<ResMut<VhxViewSet>>,
+) {
+    if let Some(viewset) = viewset.as_mut() {
+        let Some(mut view) = viewset.view_mut(0) else {
+            return; // Nothing to do without views..
+        };
+        if view.new_resolution.is_some() {
+            debug_assert!(
+                !view.new_images_ready,
+                "Expected images ready flag to be false before images are taken over"
+            );
+            view.new_images_ready = gpu_images
+                .get(view.new_output_texture.as_ref().unwrap())
+                .is_some()
+                && gpu_images
+                    .get(view.new_depth_texture.as_ref().unwrap())
+                    .is_some();
+
+            if view.new_images_ready && view.new_resolution.is_some() {
+                view.resolution = view.new_resolution.take().unwrap();
+                view.spyglass.output_texture = view.new_output_texture.clone().unwrap();
+                view.spyglass.depth_texture = view.new_depth_texture.clone().unwrap();
             }
         }
+    }
+}
+
+/// Handles data sync between Bevy main(CPU) world and rendering world
+/// Logic here should be as lightweight as possible!
+pub(crate) fn sync_from_main_world(
+    mut commands: Commands,
+    mut world: ResMut<bevy::render::MainWorld>,
+    render_world_viewset: Option<Res<VhxViewSet>>,
+) {
+    let Some(mut main_world_viewset) = world.get_resource_mut::<VhxViewSet>() else {
+        return; // Nothing to do without a viewset..
+    };
+
+    if render_world_viewset.is_none() || main_world_viewset.changed {
+        commands.insert_resource(main_world_viewset.clone());
+        main_world_viewset.changed = false;
+        return;
+    }
+
+    if main_world_viewset.is_empty() {
+        return; // Nothing else to do without views..
+    }
+
+    let Some(render_world_viewset) = render_world_viewset else {
+        // This shouldn't happen ?! In case main world already has an available viewset
+        // where the view images are updated, there should already be a viewset in the render world
+        commands.insert_resource(main_world_viewset.clone());
+        return;
+    };
+
+    if render_world_viewset.view(0).unwrap().new_images_ready
+        && !main_world_viewset.view(0).unwrap().new_images_ready
+    {
+        main_world_viewset.view_mut(0).unwrap().new_images_ready = true;
     }
 }
 
@@ -310,7 +381,7 @@ impl<
 {
     fn build(&self, app: &mut App) {
         app.add_plugins((ExtractResourcePlugin::<BoxTreeGPUHost<T>>::default(),));
-        app.add_systems(Update, handle_resolution_updates);
+        app.add_systems(Update, handle_resolution_updates_main_world);
         let render_app = app.sub_app_mut(RenderApp);
         render_app.add_systems(ExtractSchedule, sync_from_main_world);
         render_app.add_systems(
@@ -319,6 +390,7 @@ impl<
                 write_to_gpu::<T>.in_set(RenderSet::PrepareAssets),
                 prepare_bind_groups.in_set(RenderSet::PrepareBindGroups),
                 handle_gpu_readback.in_set(RenderSet::Cleanup),
+                handle_resolution_updates_render_world,
             ),
         );
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();

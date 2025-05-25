@@ -55,7 +55,6 @@ impl Version {
 pub fn version() -> Version {
     let numbers: Vec<u32> = env!("CARGO_PKG_VERSION")
         .split(".")
-        .into_iter()
         .map(|i| {
             i.parse::<u32>()
                 .expect("Expected to be able to parse version string into u32")

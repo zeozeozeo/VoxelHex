@@ -101,11 +101,10 @@ impl render_graph::Node for VhxRenderNode {
             world.get_resource::<VhxRenderPipeline>().as_mut(),
             world.get_resource::<VhxViewSet>().as_mut(),
         ) {
-            if 0 == viewset.views.len() {
+            if viewset.is_empty() {
                 return Ok(()); // Nothing to do without views..
             }
-
-            let current_view = viewset.views[0].read().unwrap();
+            let current_view = viewset.view(0).unwrap();
             let resources = viewset.resources[0].as_ref();
 
             if self.ready && resources.is_some() {
@@ -293,27 +292,16 @@ pub(crate) fn prepare_bind_groups(
     mut pipeline: Option<ResMut<VhxRenderPipeline>>,
     mut viewset: Option<ResMut<VhxViewSet>>,
 ) {
-    if let (Some(mut pipeline), Some(viewset)) = (pipeline.as_mut(), viewset.as_mut()) {
-        if 0 == viewset.views.len() {
+    if let (Some(pipeline), Some(viewset)) = (pipeline.as_mut(), viewset.as_mut()) {
+        if viewset.is_empty() {
             return; // Nothing to do without views..
         }
 
         let (should_rebuild, should_refresh) = {
-            let view = viewset.views[0].read().unwrap();
+            let view = viewset.view(0).unwrap();
             (
-                (view.rebuild || viewset.resources[0].is_none()),
-                view.rebuild
-                    && viewset.resources[0].is_some()
-                    && view.new_output_texture.is_some()
-                    && gpu_images
-                        .get(view.new_output_texture.as_ref().unwrap())
-                        .is_some()
-                    && view.spyglass.output_texture == *view.new_output_texture.as_ref().unwrap()
-                    && view.new_depth_texture.is_some()
-                    && gpu_images
-                        .get(view.new_depth_texture.as_ref().unwrap())
-                        .is_some()
-                    && view.spyglass.depth_texture == *view.new_depth_texture.as_ref().unwrap(),
+                ((view.rebuild || viewset.resources[0].is_none()) && view.new_images_ready),
+                (view.rebuild && viewset.resources[0].is_some() && view.new_images_ready),
             )
         };
 
@@ -329,7 +317,7 @@ pub(crate) fn prepare_bind_groups(
                 node_requests_buffer,
                 readable_node_requests_buffer,
             ) = create_spyglass_bind_group(
-                &mut pipeline,
+                pipeline,
                 &render_device,
                 &viewset.views[0].write().unwrap(),
             );
@@ -338,7 +326,7 @@ pub(crate) fn prepare_bind_groups(
             let (render_stage_prepass_bind_group, render_stage_main_bind_group) =
                 create_stage_bind_groups(
                     &gpu_images,
-                    &mut pipeline,
+                    pipeline,
                     &render_device,
                     &viewset.views[0].write().unwrap(),
                 );
@@ -421,7 +409,7 @@ pub(crate) fn prepare_bind_groups(
             )
         } else {
             let view_resources = create_view_resources(
-                &mut pipeline,
+                pipeline,
                 render_device,
                 gpu_images,
                 &viewset.views[0].read().unwrap(),

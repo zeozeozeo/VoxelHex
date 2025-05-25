@@ -1,4 +1,4 @@
-use crate::{ui::components::*, ui::UiState};
+use crate::{ui::behavior::SettingsChanged, ui::components::*, ui::UiState};
 use bevy::prelude::*;
 use bevy_lunex::prelude::*;
 use bevy_panorbit_camera::PanOrbitCamera;
@@ -62,23 +62,20 @@ pub(crate) fn mouse_action_cleanup(
         ui_state.menu_interaction = false;
         for mut item in ui_action_items_query.iter_mut() {
             item.is_active = false;
+            item.triggered = true;
         }
     }
 }
 
 fn direction_from_cam(cam: &PanOrbitCamera) -> Option<V3cf32> {
-    if let Some(radius) = cam.radius {
-        Some(
-            V3c::new(
-                radius / 2. + cam.yaw.unwrap().sin() * radius,
-                radius + cam.pitch.unwrap().sin() * radius * 2.,
-                radius / 2. + cam.yaw.unwrap().cos() * radius,
-            )
-            .normalized(),
+    cam.radius.map(|radius| {
+        V3c::new(
+            radius / 2. + cam.yaw.unwrap().sin() * radius,
+            radius + cam.pitch.unwrap().sin() * radius * 2.,
+            radius / 2. + cam.yaw.unwrap().cos() * radius,
         )
-    } else {
-        None
-    }
+        .normalized()
+    })
 }
 
 pub(crate) fn handle_world_interaction_block_by_ui(
@@ -88,15 +85,15 @@ pub(crate) fn handle_world_interaction_block_by_ui(
     let mut cam = camera_query
         .single_mut()
         .expect("Expected PanOrbitCamera to be available in ECS!");
-    if false == ui_state.menu_interaction && !cam.enabled {
+    if !ui_state.menu_interaction && !cam.enabled {
         cam.enabled = true;
-    } else if true == ui_state.menu_interaction && cam.enabled {
+    } else if ui_state.menu_interaction && cam.enabled {
         cam.enabled = false;
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct CameraPosition {
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CameraPosition {
     focus: Vec3,
     radius: f32,
     yaw: f32,
@@ -106,12 +103,26 @@ struct CameraPosition {
 impl Default for CameraPosition {
     fn default() -> Self {
         CameraPosition {
-            focus: Vec3::new(0., 0., 0.),
-            radius: 1.,
-            yaw: 0.,
-            pitch: 0.,
+            focus: Vec3::new(421.03085, 108.76257, 309.92087),
+            radius: 300.0,
+            yaw: 5.3603134,
+            pitch: -0.75049293,
         }
     }
+}
+
+pub(crate) fn init_camera(pkv: Res<PkvStore>, mut camera_query: Query<&mut PanOrbitCamera>) {
+    let pos = pkv
+        .get::<CameraPosition>("camera_position")
+        .unwrap_or_default();
+
+    let mut cam = camera_query
+        .single_mut()
+        .expect("Expected PanOrbitCamera to be available in ECS!");
+    cam.target_focus = pos.focus;
+    cam.target_radius = pos.radius;
+    cam.target_yaw = pos.yaw;
+    cam.target_pitch = pos.pitch;
 }
 
 pub(crate) fn handle_camera_update(
@@ -139,7 +150,7 @@ pub(crate) fn handle_camera_update(
 
     // Camera movement
     if let Some(mut viewset) = viewset {
-        if 0 == viewset.len() || ui_state.camera_locked {
+        if viewset.is_empty() || ui_state.camera_locked {
             return; // Nothing to do without views or a locked camera..
         }
 
@@ -148,7 +159,7 @@ pub(crate) fn handle_camera_update(
             .expect("Expected PanOrbitCamera to be available in ECS!");
 
         if let Some(_) = cam.radius {
-            let mut tree_view = viewset.view_mut(0);
+            let mut tree_view = viewset.view_mut(0).unwrap();
             tree_view.spyglass.viewport_mut().origin =
                 V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
             tree_view.spyglass.viewport_mut().direction = direction_from_cam(&cam).unwrap();
@@ -163,9 +174,9 @@ pub(crate) fn handle_camera_update(
                 "camera_position",
                 &CameraPosition {
                     focus: cam.focus,
-                    radius: cam.radius.unwrap_or_else(|| 1.),
-                    yaw: cam.yaw.unwrap_or_else(|| 0.),
-                    pitch: cam.pitch.unwrap_or_else(|| 0.),
+                    radius: cam.radius.unwrap_or(1.),
+                    yaw: cam.yaw.unwrap_or(0.),
+                    pitch: cam.pitch.unwrap_or(0.),
                 },
             )
             .expect("Expected to be able to store camera_position");
@@ -173,11 +184,9 @@ pub(crate) fn handle_camera_update(
 
         // Load camera position
         if keys.just_pressed(KeyCode::F10) {
-            let pos = if let Ok(pos) = pkv.get::<CameraPosition>("camera_position") {
-                pos
-            } else {
-                CameraPosition::default()
-            };
+            let pos = pkv
+                .get::<CameraPosition>("camera_position")
+                .unwrap_or_default();
 
             cam.target_focus = pos.focus;
             cam.target_radius = pos.radius;
@@ -200,7 +209,7 @@ pub(crate) fn handle_camera_update(
         }
 
         // Camera control
-        if let Some(_) = cam.radius {
+        if cam.radius.is_some() {
             if keys.pressed(KeyCode::ShiftLeft) {
                 cam.target_focus.y += 1.;
             }
@@ -228,19 +237,11 @@ pub(crate) fn handle_camera_update(
 }
 
 pub(crate) fn handle_settings_update(
-    keys: Res<ButtonInput<KeyCode>>,
-    asset_server: Res<AssetServer>,
+    mut commands: Commands,
     mut pkv: ResMut<PkvStore>,
     mut ui_state: ResMut<UiState>,
-    mut ui_container: Query<(&mut Visibility, &UserInterface)>,
-    mut info_panel_button_mini: Query<
-        (&mut Visibility, &Info, &Container),
-        (Without<Expanded>, Without<UserInterface>),
-    >,
-    mut info_panel_button_expanded: Query<
-        (&mut Visibility, &Info, &Container),
-        (With<Expanded>, Without<UserInterface>),
-    >,
+    asset_server: Res<AssetServer>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut output_width_button: Query<(&mut Text2d, &Output, &Width, &crate::ui::components::Button)>,
     mut output_height_button: Query<
         (
@@ -297,51 +298,7 @@ pub(crate) fn handle_settings_update(
         (Without<Width>, Without<Height>, Without<Output>),
     >,
     mut resolutions_linked: Query<(&mut Sprite, &Link, &crate::ui::components::Button)>,
-    mut camera_locked_icon: Query<
-        (&mut Visibility, &crate::ui::components::Camera, &Info),
-        (
-            Without<Link>,
-            Without<Container>,
-            Without<Expanded>,
-            Without<UserInterface>,
-        ),
-    >,
 ) {
-    // Hiding UI
-    if keys.just_pressed(KeyCode::KeyG) {
-        let (mut visibility, _) = ui_container
-            .single_mut()
-            .expect("Expected UI to be available");
-        let (mut mini_visibility, _, _) = info_panel_button_mini
-            .single_mut()
-            .expect("Expected Open Shortcuts Panel Button to be available in UI");
-        let (mut expanded_visibility, _, _) = info_panel_button_expanded
-            .single_mut()
-            .expect("Expected Close Shortcuts Panel Button to be available in UI");
-        let (mut camera_locked_visibility, _, _) = camera_locked_icon
-            .single_mut()
-            .expect("Expected Camera Lock Button to be available in UI");
-        ui_state.hide_ui = !ui_state.hide_ui;
-        pkv.set("ui_hidden", &ui_state.hide_ui.to_string())
-            .expect("Expected to be able to store setting ui_hidden!");
-        if ui_state.hide_ui {
-            *visibility = Visibility::Hidden;
-            *mini_visibility = Visibility::Hidden;
-            *expanded_visibility = Visibility::Hidden;
-            *camera_locked_visibility = Visibility::Hidden;
-        } else {
-            *visibility = Visibility::Visible;
-            *camera_locked_visibility = Visibility::Visible;
-            if ui_state.hide_shortcuts {
-                *mini_visibility = Visibility::Visible;
-                *expanded_visibility = Visibility::Hidden;
-            } else {
-                *mini_visibility = Visibility::Hidden;
-                *expanded_visibility = Visibility::Visible;
-            }
-        }
-    }
-
     let (mut output_width_text, _, _, _) = output_width_button
         .single_mut()
         .expect("Expected Output Width Button to be available in UI");
@@ -478,6 +435,7 @@ pub(crate) fn handle_settings_update(
             } else {
                 true
             };
+        commands.trigger(SettingsChanged);
     }
 
     // Restoring default settings
@@ -495,6 +453,10 @@ pub(crate) fn handle_settings_update(
         pkv.set("fov", &"50").expect("Failed to store value: fov");
         pkv.set("view_distance", &"1024")
             .expect("Failed to store value: view_distance");
+        pkv.set("output_resolution_linked", &true.to_string())
+            .expect("Expected to be able to store setting output_resolution_linked!");
+        pkv.set("viewport_resolution_linked", &true.to_string())
+            .expect("Expected to be able to store setting viewport_resolution_linked!");
 
         ui_state.output_resolution = [1920, 1080];
         ui_state.viewport_resolution = [100, 100];
@@ -515,5 +477,6 @@ pub(crate) fn handle_settings_update(
         for (mut resolution_sprite, _, _) in resolutions_linked.iter_mut() {
             *resolution_sprite = Sprite::from_image(asset_server.load("ui/linked_icon.png"));
         }
+        commands.trigger(SettingsChanged);
     }
 }

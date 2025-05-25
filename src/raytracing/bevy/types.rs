@@ -86,7 +86,7 @@ where
     pub tree: BoxTree<T>,
 }
 
-#[derive(Debug, Resource, Clone, TypePath, ExtractResource)]
+#[derive(Debug, Resource, Clone, TypePath)]
 #[type_path = "shocovox::gpu::VhxViewSet"]
 pub struct VhxViewSet {
     pub(crate) changed: bool,
@@ -126,10 +126,13 @@ pub struct BoxTreeGPUView {
     pub(crate) rebuild: bool,
 
     /// True if the initial data already sent to GPU
-    pub init_data_sent: bool,
+    pub(crate) init_data_sent: bool,
 
     /// Sets to true if related data on the GPU matches with CPU
-    pub data_ready: bool,
+    pub(crate) data_ready: bool,
+
+    /// Sets to true if new pipeline textures are ready
+    pub(crate) new_images_ready: bool,
 
     /// The data handler responsible for uploading data to the GPU
     pub(crate) data_handler: BoxTreeGPUDataHandler,
@@ -297,8 +300,8 @@ pub struct BoxTreeRenderData {
     pub(crate) color_palette: Vec<Vec4>,
 }
 
-pub(crate) const VHX_PREPASS_STAGE_ID: u32 = 01;
-pub(crate) const VHX_RENDER_STAGE_ID: u32 = 02;
+pub(crate) const VHX_PREPASS_STAGE_ID: u32 = 0x01;
+pub(crate) const VHX_RENDER_STAGE_ID: u32 = 0x02;
 
 #[derive(Debug, Clone, Copy, ShaderType)]
 pub(crate) struct RenderStageData {

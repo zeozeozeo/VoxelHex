@@ -9,6 +9,7 @@ use bevy::{
 };
 use bevy_lunex::prelude::*;
 use bevy_pkv::PkvStore;
+use voxelhex::raytracing::VhxViewSet;
 
 enum ResolutionUpdated {
     OutputWidth,
@@ -25,6 +26,10 @@ pub(crate) struct OutputResolutionUpdated {
     to: u32,
 }
 
+#[derive(Event)]
+#[event(auto_propagate)]
+pub(crate) struct SettingsChanged;
+
 #[derive(Debug, Resource)]
 pub(crate) struct ModelLoadAnimationState {
     value_range: u32,
@@ -36,11 +41,13 @@ pub(crate) struct ModelLoadAnimationState {
 
 pub(crate) fn update_performance_stats(
     time: Res<Time>,
-    ui_state: Res<UiState>,
     diagnostics: Res<DiagnosticsStore>,
-    mut performance_text: Query<(&mut Text2d, &Performance)>,
+    mut performance_text: Query<(&mut Text2d, &Visibility, &Performance)>,
 ) {
-    if ui_state.hide_ui || 0 != (time.elapsed().subsec_millis() % 100) {
+    let (mut performance_text, visibility, _) = performance_text
+        .single_mut()
+        .expect("Expected FPS counter to be available in UI");
+    if visibility == Visibility::Hidden || 0 != (time.elapsed().subsec_millis() % 100) {
         // No need to update User interface too frequently or when it is hidden
         return;
     }
@@ -48,9 +55,6 @@ pub(crate) fn update_performance_stats(
         .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
         .and_then(|frametime| frametime.smoothed())
     {
-        let (mut performance_text, _) = performance_text
-            .single_mut()
-            .expect("Expected FPS counter to be available in UI");
         performance_text.0 = format!(
             "{:.001}fps/{:.001}ms",
             1000. / frametime_value,
@@ -109,7 +113,7 @@ pub(crate) fn handle_model_load_animation(
         }
 
         // Set progress bars position
-        let size_percentage = actual_value_size as f32 / animation_state.value_range as f32;
+        let size_percentage = actual_value_size / animation_state.value_range as f32;
         let value_mid = (animation_state.bottom_value + animation_state.top_value) as f32 / 2.;
         let value_mid_percentage = value_mid / animation_state.value_range as f32;
         progress_bar_size.x = container_size.x * size_percentage;
@@ -124,6 +128,86 @@ pub(crate) fn handle_model_load_animation(
         animation_state.top_value = 0;
         animation_state.bottom_value = 0;
         animation_state.speed = 0.01;
+    }
+}
+
+pub(crate) fn settings_changed_observer(
+    _: Trigger<SettingsChanged>,
+    ui_state: Res<UiState>,
+    mut images: ResMut<Assets<Image>>,
+    viewset: Option<ResMut<VhxViewSet>>,
+    mut view_output: Query<(&mut Sprite, &Model, &Output, &Container)>,
+) {
+    let Some(mut viewset) = viewset else {
+        return;
+    };
+    let Some(mut view) = viewset.view_mut(0) else {
+        return;
+    };
+
+    view.spyglass.viewport_mut().frustum.x = ui_state.viewport_resolution[0] as f32;
+    view.spyglass.viewport_mut().frustum.y = ui_state.viewport_resolution[1] as f32;
+    view.spyglass.viewport_mut().frustum.z = ui_state.view_distance as f32;
+    view.spyglass.viewport_mut().fov = ui_state.fov_value as f32;
+    let (mut output_sprite, _, _, _) = view_output
+        .single_mut()
+        .expect("Expected to have model output image available in UI!");
+    let new_output_image = view
+        .set_resolution(ui_state.output_resolution, &mut images)
+        .clone();
+    *output_sprite = Sprite::from_image(new_output_image);
+}
+
+fn fov_slider_observer(
+    mut mouse_move: Trigger<Pointer<Move>>,
+    mut ui_state: ResMut<UiState>,
+    fov_slider: Query<(
+        &UiAction,
+        &Dimension,
+        &GlobalTransform,
+        &crate::ui::components::Camera,
+        &Depth,
+        &Slider,
+        &Container,
+    )>,
+    mut fov_slider_bar: Query<
+        (
+            &mut Dimension,
+            &mut Transform,
+            &crate::ui::components::Camera,
+            &Depth,
+            &Slider,
+        ),
+        Without<Container>,
+    >,
+    viewset: Option<ResMut<VhxViewSet>>,
+) {
+    mouse_move.propagate(false);
+    let (ui_action, container_size, container_transform, _, _, _, _) = fov_slider
+        .single()
+        .expect("Expected FOV Slider to be available in UI");
+    if ui_action.is_active {
+        let (mut bar_size, mut bar_transform, _, _, _) = fov_slider_bar
+            .single_mut()
+            .expect("Expected FOV Slider bar to be available in UI");
+        bar_size.x = mouse_move.hit.position.unwrap().x - container_transform.translation().x
+            + container_size.x / 2.;
+        bar_transform.translation.x = (bar_size.x - container_size.x) / 2.;
+        let fov_bar_value_extent = (ui_action.boundaries[1] - ui_action.boundaries[0]) as f32;
+        let fov_bar_percentage = bar_size.x / container_size.x;
+        ui_state.fov_value = ui_action.boundaries[1]
+            - (ui_action.boundaries[0] as f32 + fov_bar_value_extent * fov_bar_percentage) as u32;
+    }
+
+    let Some(mut viewset) = viewset else {
+        return;
+    };
+    let Some(mut view) = viewset.view_mut(0) else {
+        return;
+    };
+
+    if ui_action.triggered {
+        view.spyglass.viewport_mut().fov = ui_state.fov_value as f32;
     }
 }
 
@@ -167,9 +251,13 @@ pub(crate) fn resolution_changed_observer(
         ),
         (Without<Width>, Without<Output>),
     >,
+    mut viewset: Option<ResMut<VhxViewSet>>,
 ) {
-    match update.by {
+    (|| match update.by {
         ResolutionUpdated::OutputWidth => {
+            if !ui_state.output_resolution_linked {
+                return; // from closure, not function!!
+            }
             let (_, _, _, _, mut height_text) = output_height_button
                 .single_mut()
                 .expect("Expected Output Height Button to be available in UI");
@@ -184,6 +272,9 @@ pub(crate) fn resolution_changed_observer(
             ui_state.output_resolution[1] = new_height;
         }
         ResolutionUpdated::OutputHeight => {
+            if !ui_state.output_resolution_linked {
+                return; // from closure, not function!
+            }
             let (_, _, _, _, mut width_text) = output_width_button
                 .single_mut()
                 .expect("Expected Output Width Button to be available in UI");
@@ -198,6 +289,9 @@ pub(crate) fn resolution_changed_observer(
             ui_state.output_resolution[0] = new_width;
         }
         ResolutionUpdated::ViewportWidth => {
+            if !ui_state.viewport_resolution_linked {
+                return; // from closure, not function!
+            }
             let (_, _, _, _, mut height_text) = viewport_height_button
                 .single_mut()
                 .expect("Expected Viewport Height Button to be available in UI");
@@ -212,6 +306,9 @@ pub(crate) fn resolution_changed_observer(
             ui_state.viewport_resolution[1] = new_height;
         }
         ResolutionUpdated::ViewportHeight => {
+            if !ui_state.viewport_resolution_linked {
+                return; // from closure, not function!
+            }
             let (_, _, _, _, mut width_text) = viewport_width_button
                 .single_mut()
                 .expect("Expected Viewport Width Button to be available in UI");
@@ -225,6 +322,20 @@ pub(crate) fn resolution_changed_observer(
             width_text.0 = new_width.to_string();
             ui_state.viewport_resolution[0] = new_width;
         }
+    })();
+
+    if matches!(
+        update.by,
+        ResolutionUpdated::ViewportWidth | ResolutionUpdated::ViewportHeight,
+    ) {
+        let Some(ref mut viewset) = viewset else {
+            return;
+        };
+        let Some(mut view) = viewset.view_mut(0) else {
+            return;
+        };
+        view.spyglass.viewport_mut().frustum.x = ui_state.viewport_resolution[0] as f32;
+        view.spyglass.viewport_mut().frustum.y = ui_state.viewport_resolution[1] as f32;
     }
 }
 
@@ -410,45 +521,6 @@ pub(crate) fn setup(
     );
 
     // FOV slider
-    let fov_slider_observer = |mut mouse_move: Trigger<Pointer<Move>>,
-                               mut ui_state: ResMut<UiState>,
-                               fov_slider: Query<(
-        &UiAction,
-        &Dimension,
-        &GlobalTransform,
-        &crate::ui::components::Camera,
-        &Depth,
-        &Slider,
-        &Container,
-    )>,
-                               mut fov_slider_bar: Query<
-        (
-            &mut Dimension,
-            &mut Transform,
-            &crate::ui::components::Camera,
-            &Depth,
-            &Slider,
-        ),
-        Without<Container>,
-    >| {
-        let (ui_action, container_size, container_transform, _, _, _, _) = fov_slider
-            .single()
-            .expect("Expected FOV Slider to be available in UI");
-        if ui_action.is_active {
-            let (mut bar_size, mut bar_transform, _, _, _) = fov_slider_bar
-                .single_mut()
-                .expect("Expected FOV Slider bar to be available in UI");
-            bar_size.x = mouse_move.hit.position.unwrap().x - container_transform.translation().x
-                + container_size.x / 2.;
-            bar_transform.translation.x = (bar_size.x - container_size.x) / 2.;
-            let fov_bar_value_extent = (ui_action.boundaries[1] - ui_action.boundaries[0]) as f32;
-            let fov_bar_percentage = (bar_size.x / container_size.x) as f32;
-            ui_state.fov_value =
-                (ui_action.boundaries[0] as f32 + fov_bar_value_extent * fov_bar_percentage) as u32;
-        }
-        mouse_move.propagate(false);
-    };
-
     let (fov_slider, _, _, _, _, _) = fov_slider
         .single()
         .expect("Expected FOV Slider to be available in UI");
@@ -461,10 +533,120 @@ pub(crate) fn setup(
     commands.entity(fov_slider_bar).observe(fov_slider_observer);
 }
 
+pub(crate) fn update_output_resolution_and_view_dist(
+    ui_state: ResMut<UiState>,
+    mut images: ResMut<Assets<Image>>,
+    viewset: Option<ResMut<VhxViewSet>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut view_output: Query<(&mut Sprite, &Model, &Output, &Container)>,
+) {
+    let Some(mut viewset) = viewset else {
+        return;
+    };
+    let Some(mut view) = viewset.view_mut(0) else {
+        return;
+    };
+    // Update view distance if differs
+    if view.spyglass.viewport().frustum.z != ui_state.view_distance as f32 {
+        view.spyglass.viewport_mut().frustum.z = ui_state.view_distance as f32;
+    }
+
+    // Apply Output resolution update
+    if buttons.just_released(MouseButton::Left) {
+        if ui_state.output_resolution == view.resolution() {
+            return;
+        }
+        let (mut output_sprite, _, _, _) = view_output
+            .single_mut()
+            .expect("Expected to have model output image available in UI!");
+        let new_output_image = view
+            .set_resolution(ui_state.output_resolution, &mut images)
+            .clone();
+        *output_sprite = Sprite::from_image(new_output_image);
+    }
+}
+
+pub(crate) fn handle_ui_hidden(
+    mut pkv: ResMut<PkvStore>,
+    mut ui_state: ResMut<UiState>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut ui_container: Query<(&mut Visibility, &UserInterface)>,
+    mut info_panel_button_mini: Query<
+        (&mut Visibility, &Info, &Container),
+        (Without<Expanded>, Without<UserInterface>),
+    >,
+    mut info_panel_button_expanded: Query<
+        (&mut Visibility, &Info, &Container),
+        (With<Expanded>, Without<UserInterface>),
+    >,
+    mut camera_locked_icon: Query<
+        (&mut Visibility, &crate::ui::components::Camera, &Info),
+        (
+            Without<Link>,
+            Without<Container>,
+            Without<Expanded>,
+            Without<UserInterface>,
+        ),
+    >,
+    mut perf_panel: Query<
+        (&mut Visibility, &Performance, &Container),
+        (
+            Without<Link>,
+            Without<Info>,
+            Without<Expanded>,
+            Without<UserInterface>,
+            Without<crate::ui::components::Camera>,
+        ),
+    >,
+) {
+    // Hiding UI
+    if keys.just_pressed(KeyCode::KeyG) {
+        let (mut visibility, _) = ui_container
+            .single_mut()
+            .expect("Expected UI to be available");
+        let (mut mini_visibility, _, _) = info_panel_button_mini
+            .single_mut()
+            .expect("Expected Open Shortcuts Panel Button to be available in UI");
+        let (mut expanded_visibility, _, _) = info_panel_button_expanded
+            .single_mut()
+            .expect("Expected Close Shortcuts Panel Button to be available in UI");
+        let (mut camera_locked_visibility, _, _) = camera_locked_icon
+            .single_mut()
+            .expect("Expected Camera Lock Button to be available in UI");
+        ui_state.hide_ui = !ui_state.hide_ui;
+        pkv.set("ui_hidden", &ui_state.hide_ui.to_string())
+            .expect("Expected to be able to store setting ui_hidden!");
+        if ui_state.hide_ui {
+            *visibility = Visibility::Hidden;
+            *mini_visibility = Visibility::Hidden;
+            *expanded_visibility = Visibility::Hidden;
+            *camera_locked_visibility = Visibility::Hidden;
+        } else {
+            *visibility = Visibility::Visible;
+            *camera_locked_visibility = Visibility::Visible;
+            if ui_state.hide_shortcuts {
+                *mini_visibility = Visibility::Visible;
+                *expanded_visibility = Visibility::Hidden;
+            } else {
+                *mini_visibility = Visibility::Hidden;
+                *expanded_visibility = Visibility::Visible;
+            }
+        }
+    }
+
+    if keys.just_pressed(KeyCode::KeyF) {
+        let (mut perf_visibility, _, _) = perf_panel
+            .single_mut()
+            .expect("Expected Performance panel to be available in UI");
+
+        perf_visibility.toggle_visible_hidden();
+    }
+}
+
 fn update_number(number: u32, update_motion: &Vec2, ui_action: &UiAction) -> u32 {
     let update_count = update_motion.x - update_motion.y;
     let mut new_number =
-        (number as f32 * (1. + ui_action.change_sensitivity * (update_count as f32 / 4.))) as u32;
+        (number as f32 * (1. + ui_action.change_sensitivity * (update_count / 4.))) as u32;
     if new_number == number && 0. != update_count {
         new_number += update_count.signum() as u32;
     }
@@ -557,14 +739,12 @@ pub(crate) fn update(
             .expect("Expected viewport width text to be parsable as number");
         let new_width = update_number(width, &mouse_update_motion, ui_action);
         text.0 = new_width.to_string();
-        ui_state.output_resolution[0] = new_width;
-        if ui_state.viewport_resolution_linked && width != new_width {
-            commands.trigger(OutputResolutionUpdated {
-                by: ResolutionUpdated::ViewportWidth,
-                from: width,
-                to: new_width,
-            });
-        }
+        ui_state.viewport_resolution[0] = new_width;
+        commands.trigger(OutputResolutionUpdated {
+            by: ResolutionUpdated::ViewportWidth,
+            from: width,
+            to: new_width,
+        });
     }
 
     // Viewport resolution Height update button
@@ -578,14 +758,12 @@ pub(crate) fn update(
             .expect("Expected viewport height text to be parsable as number");
         let new_height = update_number(height, &mouse_update_motion, ui_action);
         text.0 = new_height.to_string();
-        ui_state.output_resolution[1] = new_height;
-        if ui_state.viewport_resolution_linked && height != new_height {
-            commands.trigger(OutputResolutionUpdated {
-                by: ResolutionUpdated::ViewportHeight,
-                from: height,
-                to: new_height,
-            });
-        }
+        ui_state.viewport_resolution[1] = new_height;
+        commands.trigger(OutputResolutionUpdated {
+            by: ResolutionUpdated::ViewportHeight,
+            from: height,
+            to: new_height,
+        });
     }
 
     // Output resolution Width update button
@@ -598,16 +776,13 @@ pub(crate) fn update(
             .parse::<u32>()
             .expect("Expected text to be parsable as number");
         let new_width = update_number(width, &mouse_update_motion, ui_action);
-        ui_state.viewport_resolution[0] = new_width;
-
+        ui_state.output_resolution[0] = new_width;
         text.0 = new_width.to_string();
-        if ui_state.output_resolution_linked && width != new_width {
-            commands.trigger(OutputResolutionUpdated {
-                by: ResolutionUpdated::OutputWidth,
-                from: width,
-                to: new_width,
-            });
-        }
+        commands.trigger(OutputResolutionUpdated {
+            by: ResolutionUpdated::OutputWidth,
+            from: width,
+            to: new_width,
+        });
     }
 
     // Output resolution Height update button
@@ -621,15 +796,12 @@ pub(crate) fn update(
             .expect("Expected text to be parsable as number");
         let new_height = update_number(height, &mouse_update_motion, ui_action);
         text.0 = new_height.to_string();
-        ui_state.viewport_resolution[1] = new_height;
-
-        if ui_state.output_resolution_linked && height != new_height {
-            commands.trigger(OutputResolutionUpdated {
-                by: ResolutionUpdated::OutputHeight,
-                from: height,
-                to: new_height,
-            });
-        }
+        ui_state.output_resolution[1] = new_height;
+        commands.trigger(OutputResolutionUpdated {
+            by: ResolutionUpdated::OutputHeight,
+            from: height,
+            to: new_height,
+        });
     }
 
     // Progress bar

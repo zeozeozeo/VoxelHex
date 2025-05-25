@@ -626,7 +626,7 @@ where
     }
 
     pub(crate) fn parse_version(bytes: &[u8]) -> Result<crate::Version, Error> {
-        match bendy::decoding::Decoder::new(&bytes)
+        match bendy::decoding::Decoder::new(bytes)
             .with_max_depth(SERIALIZE_MAX_DEPTH)
             .next_object()?
             .expect("Expected BoxTree object list")

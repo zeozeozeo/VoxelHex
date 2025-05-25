@@ -222,7 +222,6 @@ pub(crate) fn create_bind_group_layouts(
 //  ░░█████████  █████   █████ ░░░███████░   ░░████████   █████       ░░█████████
 //   ░░░░░░░░░  ░░░░░   ░░░░░    ░░░░░░░      ░░░░░░░░   ░░░░░         ░░░░░░░░░
 //##############################################################################
-///
 pub(crate) fn create_stage_bind_groups(
     gpu_images: &Res<RenderAssets<GpuImage>>,
     pipeline: &mut VhxRenderPipeline,

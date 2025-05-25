@@ -1,6 +1,7 @@
 mod loader;
 mod ui;
 
+use crate::ui::input::CameraPosition;
 use bevy::{
     diagnostic::FrameTimeDiagnosticsPlugin, prelude::*, render::view::RenderLayers,
     window::WindowPlugin,
@@ -30,7 +31,7 @@ fn main() {
             FrameTimeDiagnosticsPlugin::new(300),
             PanOrbitCameraPlugin,
             UiLunexPlugins,
-            //UiLunexDebugPlugin::<1, 2>,
+            // UiLunexDebugPlugin::<1, 2>,
         ))
         .add_systems(Startup, (ui::layout::setup, setup))
         .add_systems(
@@ -54,8 +55,11 @@ fn main() {
         .add_systems(
             FixedUpdate,
             (
+                ui::input::init_camera.run_if(run_once),
                 ui::behavior::handle_model_load_animation,
                 ui::behavior::update_performance_stats,
+                ui::behavior::update_output_resolution_and_view_dist,
+                ui::behavior::handle_ui_hidden,
                 loader::observe_file_drop,
                 loader::handle_model_load_finished,
             ),
@@ -64,11 +68,16 @@ fn main() {
         .insert_resource(preferences)
         .insert_resource(VhxViewSet::new())
         .add_observer(ui::behavior::resolution_changed_observer)
+        .add_observer(ui::behavior::settings_changed_observer)
         .run();
 }
 
 fn init_preferences_cache() -> PkvStore {
     let mut pkv = PkvStore::new("MinistryOfVoxelAffairs", "Whisp");
+    if pkv.get::<CameraPosition>("camera_position").is_err() {
+        pkv.set("CameraPosition", &CameraPosition::default())
+            .expect("Failed to store default value: camera_position");
+    }
     if pkv.get::<String>("camera_locked").is_err() {
         pkv.set("camera_locked", &"false")
             .expect("Failed to store default value: camera_locked");
@@ -123,7 +132,7 @@ fn setup(mut commands: Commands) {
             ..default()
         },
         PanOrbitCamera {
-            focus: Vec3::new(0., 300., 0.),
+            focus: Vec3::new(0., 100., 0.),
             ..default()
         },
     ));

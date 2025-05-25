@@ -21,7 +21,7 @@ enum TreePayload {
     #[default]
     Unknown,
     Loading(Task<Result<BoxTree<u32>, String>>),
-    Loaded(BoxTree<u32>),
+    Loaded(Box<BoxTree<u32>>),
 }
 
 #[derive(Resource)]
@@ -37,24 +37,26 @@ pub(crate) struct TreeLoadingTask {
 
 fn delete_by_path<P: AsRef<Path>>(path: P) {
     if path.as_ref().exists() {
-        std::fs::remove_file(path.as_ref()).expect(&format!(
-            "Expected to be able to remove temporary file at ::{:?}::",
-            path.as_ref()
-                .to_str()
-                .unwrap_or_else(|| "path_file_conversion_failed")
-        ));
+        std::fs::remove_file(path.as_ref()).unwrap_or_else(|_| {
+            panic!(
+                "Expected to be able to remove temporary file at ::{:?}::",
+                path.as_ref()
+                    .to_str()
+                    .unwrap_or("path_file_conversion_failed")
+            )
+        });
     }
 }
 
-fn load_task_from_path(path: &PathBuf, confirmed: bool) -> TreeLoadingTask {
+fn load_task_from_path(path: &Path, confirmed: bool) -> TreeLoadingTask {
     let tree_file_name = path
         .file_stem()
         .unwrap_or_else(|| OsStr::new("unknwon"))
         .to_str()
-        .unwrap_or_else(|| "name_conversion_failed");
+        .unwrap_or("name_conversion_failed");
     let model_path = path
         .to_str()
-        .unwrap_or_else(|| "name_conversion_failed")
+        .unwrap_or("name_conversion_failed")
         .to_string();
     let tmp_file_path_ = ".tmp_cache_".to_string() + tree_file_name;
     let tmp_file_path = tmp_file_path_.to_string();
@@ -119,13 +121,12 @@ pub(crate) fn observe_file_drop(
                 let tree_facory = tree_factory
                     .as_mut()
                     .expect("Expected available tree loading task upon model load cancellation");
-                #[cfg(debug_assertions)]
-                {
+                if cfg!(debug_assertions) {
                     let tree_file_name = path_buf
                         .file_stem()
                         .unwrap_or_else(|| OsStr::new("unknwon"))
                         .to_str()
-                        .unwrap_or_else(|| "name_conversion_failed");
+                        .unwrap_or("name_conversion_failed");
                     let tmp_file_path_ = ".tmp_cache_".to_string() + tree_file_name;
                     debug_assert!(tmp_file_path_ == tree_facory.tmp_file_path);
                 }
@@ -175,8 +176,8 @@ pub(crate) fn handle_model_load_finished(
                         commands.remove_resource::<TreeLoadingTask>();
                         return;
                     }
-                    tree_factory.payload = TreePayload::Loaded(tree.ok().unwrap());
-                    message_text.0 = format!("Initiating GPU View...");
+                    tree_factory.payload = TreePayload::Loaded(Box::new(tree.ok().unwrap()));
+                    message_text.0 = "Initiating GPU View...".to_string();
                 }
 
                 // Process the tree in next iteration
@@ -205,16 +206,19 @@ pub(crate) fn handle_model_load_finished(
                     &tree_factory.tmp_file_path,
                     &tree_factory.target_cache_file_path,
                 )
-                .expect(
-                    &format!(
-                        "Expected to be able to rename temporary file {:?} to {:?}",
-                        tree_factory.tmp_file_path, tree_factory.target_cache_file_path
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{}",
+                        format!(
+                            "Expected to be able to rename temporary file {:?} to {:?}",
+                            tree_factory.tmp_file_path, tree_factory.target_cache_file_path
+                        )
+                        .to_string()
                     )
-                    .to_string(),
-                );
+                });
             }
 
-            let mut host = BoxTreeGPUHost { tree };
+            let mut host = BoxTreeGPUHost { tree: *tree };
             viewset.clear();
             let view_index = host.create_new_view(
                 &mut viewset,
@@ -237,7 +241,8 @@ pub(crate) fn handle_model_load_finished(
             let (mut output_sprite, _, _, _) = view_output
                 .single_mut()
                 .expect("Expected to have model output image available in UI!");
-            *output_sprite = Sprite::from_image(viewset.view(view_index).output_texture().clone());
+            *output_sprite =
+                Sprite::from_image(viewset.view(view_index).unwrap().output_texture().clone());
 
             // Insert the tree resource
             ui_state.model_loaded = true;
@@ -351,7 +356,6 @@ pub(crate) fn load_last_loaded_model(
 
                         commands
                             .insert_resource(load_task_from_path(&PathBuf::from(model_path), true));
-                        return;
                     } else {
                         message_text.0 =
                             "Cache version mismatch, model not found.. reverting to default model"
