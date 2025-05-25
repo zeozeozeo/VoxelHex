@@ -6,25 +6,21 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 
 #[cfg(feature = "bevy_wgpu")]
 use voxelhex::{
-    boxtree::{BoxTree, V3c, V3cf32},
+    boxtree::{Albedo, BoxTree, BoxTreeEntry, V3c, V3cf32},
     raytracing::{BoxTreeGPUHost, Ray, VhxViewSet, Viewport},
 };
-
-// #[cfg(feature = "bevy_wgpu")]
-// use iyes_perf_ui::{
-//     entries::diagnostics::{PerfUiEntryFPS, PerfUiEntryFPSWorst},
-//     ui::root::PerfUiRoot,
-//     PerfUiPlugin,
-// };
 
 #[cfg(feature = "bevy_wgpu")]
 use image::{ImageBuffer, Rgb};
 
 #[cfg(feature = "bevy_wgpu")]
-const DISPLAY_RESOLUTION: [u32; 2] = [1920, 1080];
+const DISPLAY_RESOLUTION: [u32; 2] = [1024, 768];
 
 #[cfg(feature = "bevy_wgpu")]
 const BRICK_DIMENSION: u32 = 32;
+
+#[cfg(feature = "bevy_wgpu")]
+const TREE_SIZE: u32 = 128;
 
 #[cfg(feature = "bevy_wgpu")]
 fn main() {
@@ -40,12 +36,10 @@ fn main() {
                 ..default()
             }),
             voxelhex::raytracing::RenderBevyPlugin::<u32>::new(),
-            bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
-            // PanOrbitCameraPlugin,
-            // PerfUiPlugin,
+            PanOrbitCameraPlugin,
         ))
         .add_systems(Startup, setup)
-        // .add_systems(Update, set_viewport_for_camera)
+        .add_systems(Update, set_viewport_for_camera)
         .add_systems(Update, handle_zoom)
         .run();
 }
@@ -53,21 +47,55 @@ fn main() {
 #[cfg(feature = "bevy_wgpu")]
 fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
     // fill boxtree with data
-    let mut tree: BoxTree;
-    let tree_path = "example_junk_sponza";
-    if std::path::Path::new(tree_path).exists() {
-        tree = BoxTree::load(&tree_path).ok().unwrap();
-    } else {
-        tree = match voxelhex::boxtree::BoxTree::load_vox_file(
-            "assets/models/sponza.vox",
-            BRICK_DIMENSION,
-        ) {
-            Ok(tree_) => tree_,
-            Err(message) => panic!("Parsing model file failed with message: {message}"),
-        };
-        tree.albedo_mip_map_resampling_strategy()
-            .switch_albedo_mip_maps(true);
-        tree.save(&tree_path).ok().unwrap();
+    let mut tree: BoxTree = voxelhex::boxtree::BoxTree::new(TREE_SIZE, BRICK_DIMENSION)
+        .ok()
+        .unwrap();
+
+    for x in 0..TREE_SIZE {
+        for y in 0..TREE_SIZE {
+            for z in 0..TREE_SIZE {
+                if ((x < (TREE_SIZE / 4) || y < (TREE_SIZE / 4) || z < (TREE_SIZE / 4))
+                    && (0 == x % 2 && 0 == y % 4 && 0 == z % 2))
+                    || ((TREE_SIZE / 2) <= x && (TREE_SIZE / 2) <= y && (TREE_SIZE / 2) <= z)
+                {
+                    let r = if 0 == x % (TREE_SIZE / 4) {
+                        (x as f32 / TREE_SIZE as f32 * 255.) as u32
+                    } else {
+                        128
+                    };
+                    let g = if 0 == y % (TREE_SIZE / 4) {
+                        (y as f32 / TREE_SIZE as f32 * 255.) as u32
+                    } else {
+                        128
+                    };
+                    let b = if 0 == z % (TREE_SIZE / 4) {
+                        (z as f32 / TREE_SIZE as f32 * 255.) as u32
+                    } else {
+                        128
+                    };
+                    tree.insert(
+                        &V3c::new(x, y, z),
+                        &Albedo::default()
+                            .with_red(r as u8)
+                            .with_green(g as u8)
+                            .with_blue(b as u8)
+                            .with_alpha(255),
+                    )
+                    .ok()
+                    .unwrap();
+                    assert_eq!(
+                        tree.get(&V3c::new(x, y, z)),
+                        BoxTreeEntry::Visual(
+                            &Albedo::default()
+                                .with_red(r as u8)
+                                .with_green(g as u8)
+                                .with_blue(b as u8)
+                                .with_alpha(255)
+                        )
+                    );
+                }
+            }
+        }
     }
 
     let mut host = BoxTreeGPUHost { tree };
@@ -100,34 +128,18 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
     ));
     commands.spawn(display);
     commands.insert_resource(views);
-    // commands.spawn((
-    //     Camera {
-    //         is_active: false,
-    //         ..default()
-    //     },
-    //     PanOrbitCamera {
-    //         focus: Vec3::new(0., 300., 0.),
-    //         ..default()
-    //     },
-    // ));
+    commands.spawn((
+        Camera {
+            is_active: false,
+            ..default()
+        },
+        PanOrbitCamera {
+            focus: Vec3::new(0., 300., 0.),
+            ..default()
+        },
+    ));
     commands.spawn(Camera2d::default());
-    // commands.spawn((
-    //     PerfUiRoot::default(),
-    //     PerfUiEntryFPS {
-    //         label: "Frame Rate (current)".into(),
-    //         threshold_highlight: Some(60.0),
-    //         digits: 5,
-    //         precision: 2,
-    //         ..default()
-    //     },
-    //     PerfUiEntryFPSWorst {
-    //         label: "Frame Rate (worst)".into(),
-    //         threshold_highlight: Some(60.0),
-    //         digits: 5,
-    //         precision: 2,
-    //         ..default()
-    //     },
-    // ));
+    println!("Takes a while to create the compute pipeline, please hang on! Thanks");
 }
 
 #[cfg(feature = "bevy_wgpu")]
@@ -146,24 +158,27 @@ fn direction_from_cam(cam: &PanOrbitCamera) -> Option<V3cf32> {
     }
 }
 
-// #[cfg(feature = "bevy_wgpu")]
-// fn set_viewport_for_camera(camera_query: Query<&mut PanOrbitCamera>, view_set: ResMut<VhxViewSet>) {
-//     let cam = camera_query.single();
-//     if let Some(_) = cam.radius {
-//         let mut tree_view = view_set.views[0].lock().unwrap();
-//         tree_view.spyglass.viewport_mut().origin = V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
-//         tree_view.spyglass.viewport_mut().direction = direction_from_cam(cam).unwrap();
-//     }
-// }
+#[cfg(feature = "bevy_wgpu")]
+fn set_viewport_for_camera(
+    camera_query: Query<&mut PanOrbitCamera>,
+    mut view_set: ResMut<VhxViewSet>,
+) {
+    let cam = camera_query
+        .single()
+        .expect("Expecet PanOrbitCamera to be available");
+    if let Some(_) = cam.radius {
+        let mut tree_view = view_set.view_mut(0);
+        tree_view.spyglass.viewport_mut().origin = V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
+        tree_view.spyglass.viewport_mut().direction = direction_from_cam(cam).unwrap();
+    }
+}
 
 #[cfg(feature = "bevy_wgpu")]
 fn handle_zoom(
     keys: Res<ButtonInput<KeyCode>>,
     tree: ResMut<BoxTreeGPUHost>,
     mut view_set: ResMut<VhxViewSet>,
-    mut images: ResMut<Assets<Image>>,
-    // mut camera_query: Query<&mut PanOrbitCamera>,
-    mut sprite_query: Query<&mut Sprite>,
+    mut camera_query: Query<&mut PanOrbitCamera>,
 ) {
     let mut tree_view = view_set.view_mut(0);
 
@@ -231,59 +246,43 @@ fn handle_zoom(
         tree_view.spyglass.viewport_mut().fov *= 1. - 0.09;
     }
 
-    // let mut cam = camera_query.single_mut();
-    // if keys.pressed(KeyCode::ShiftLeft) {
-    //     cam.target_focus.y += 1.;
-    // }
-    // if keys.pressed(KeyCode::ControlLeft) {
-    //     cam.target_focus.y -= 1.;
-    // }
+    let mut cam = camera_query
+        .single_mut()
+        .expect("Expecet PanOrbitCamera to be available");
+    if keys.pressed(KeyCode::ShiftLeft) {
+        cam.target_focus.y += 1.;
+    }
+    if keys.pressed(KeyCode::ControlLeft) {
+        cam.target_focus.y -= 1.;
+    }
 
-    // if keys.pressed(KeyCode::NumpadAdd) {
-    //     tree_view.view_frustum_mut().z *= 1.01;
-    // }
-    // if keys.pressed(KeyCode::NumpadSubtract) {
-    //     tree_view.view_frustum_mut().z *= 0.99;
-    // }
+    if keys.pressed(KeyCode::NumpadAdd) {
+        tree_view.spyglass.viewport_mut().frustum.z *= 1.01;
+    }
+    if keys.pressed(KeyCode::NumpadSubtract) {
+        tree_view.spyglass.viewport_mut().frustum.z *= 0.99;
+    }
     if keys.pressed(KeyCode::F3) {
         println!("{:?}", tree_view.spyglass.viewport());
     }
 
-    // const RESOLUTION_DELTA: f32 = 0.1;
-    // if keys.just_pressed(KeyCode::NumpadAdd) {
-    //     let res = tree_view.resolution();
-    //     let new_res = [
-    //         (res[0] as f32 * (1. + RESOLUTION_DELTA)) as u32,
-    //         (res[1] as f32 * (1. + RESOLUTION_DELTA)) as u32,
-    //     ];
-    //     sprite_query.single_mut().image = tree_view.set_resolution(new_res, &mut images);
-    // }
-    // if keys.just_pressed(KeyCode::NumpadSubtract) {
-    //     let res = tree_view.resolution();
-    //     let new_res = [
-    //         (res[0] as f32 * (1. - RESOLUTION_DELTA)).max(4.) as u32,
-    //         (res[1] as f32 * (1. - RESOLUTION_DELTA)).max(3.) as u32,
-    //     ];
-    //     sprite_query.single_mut().image = tree_view.set_resolution(new_res, &mut images);
-    // }
-
-    // if let Some(_) = cam.radius {
-    //     let dir = direction_from_cam(&cam).unwrap();
-    //     let dir = Vec3::new(dir.x, dir.y, dir.z);
-    //     let right = dir.cross(Vec3::new(0., 1., 0.));
-    //     if keys.pressed(KeyCode::KeyW) {
-    //         cam.target_focus += dir;
-    //     }
-    //     if keys.pressed(KeyCode::KeyS) {
-    //         cam.target_focus -= dir;
-    //     }
-    //     if keys.pressed(KeyCode::KeyA) {
-    //         cam.target_focus += right;
-    //     }
-    //     if keys.pressed(KeyCode::KeyD) {
-    //         cam.target_focus -= right;
-    //     }
-    // }
+    if let Some(_) = cam.radius {
+        let dir = direction_from_cam(&cam).unwrap();
+        let dir = Vec3::new(dir.x, dir.y, dir.z);
+        let right = dir.cross(Vec3::new(0., 1., 0.));
+        if keys.pressed(KeyCode::KeyW) {
+            cam.target_focus += dir;
+        }
+        if keys.pressed(KeyCode::KeyS) {
+            cam.target_focus -= dir;
+        }
+        if keys.pressed(KeyCode::KeyA) {
+            cam.target_focus += right;
+        }
+        if keys.pressed(KeyCode::KeyD) {
+            cam.target_focus -= right;
+        }
+    }
 }
 
 #[cfg(not(feature = "bevy_wgpu"))]

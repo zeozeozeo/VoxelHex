@@ -604,7 +604,7 @@ impl Default for MIPMapStrategy {
         MIPMapStrategy {
             enabled: false,
             resampling_methods: HashMap::from([
-                (1, MIPResamplingMethods::PointFilter),
+                (1, MIPResamplingMethods::Posterize(0.05)),
                 (2, MIPResamplingMethods::BoxFilter),
                 (3, MIPResamplingMethods::BoxFilter),
                 (4, MIPResamplingMethods::BoxFilter),
