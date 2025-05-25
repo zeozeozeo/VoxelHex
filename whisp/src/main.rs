@@ -1,7 +1,10 @@
 mod loader;
 mod ui;
 
-use bevy::{prelude::*, render::view::RenderLayers, window::WindowPlugin};
+use bevy::{
+    diagnostic::FrameTimeDiagnosticsPlugin, prelude::*, render::view::RenderLayers,
+    window::WindowPlugin,
+};
 use bevy_lunex::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use bevy_pkv::PkvStore;
@@ -24,7 +27,7 @@ fn main() {
                 ..default()
             }),
             voxelhex::raytracing::RenderBevyPlugin::<u32>::new(),
-            bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
+            FrameTimeDiagnosticsPlugin::new(300),
             PanOrbitCameraPlugin,
             UiLunexPlugins,
             //UiLunexDebugPlugin::<1, 2>,
@@ -42,11 +45,17 @@ fn main() {
             Update,
             (
                 ui::behavior::update,
-                ui::behavior::handle_model_load_animation,
                 ui::input::mouse_action_cleanup,
                 ui::input::handle_settings_update,
                 ui::input::handle_camera_update,
                 ui::input::handle_world_interaction_block_by_ui,
+            ),
+        )
+        .add_systems(
+            FixedUpdate,
+            (
+                ui::behavior::handle_model_load_animation,
+                ui::behavior::update_performance_stats,
                 loader::observe_file_drop,
                 loader::handle_model_load_finished,
             ),

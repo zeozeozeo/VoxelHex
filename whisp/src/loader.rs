@@ -27,7 +27,9 @@ enum TreePayload {
 #[derive(Resource)]
 pub(crate) struct TreeLoadingTask {
     confirmed: bool,
+    model_version: voxelhex::Version,
     model_name: String,
+    model_path: String,
     tmp_file_path: String,
     target_cache_file_path: String,
     payload: TreePayload,
@@ -66,6 +68,8 @@ fn load_task_from_path(path: &PathBuf, confirmed: bool) -> TreeLoadingTask {
         confirmed,
         tmp_file_path,
         target_cache_file_path,
+        model_version: voxelhex::version(),
+        model_path: model_path.clone(),
         model_name: tree_file_name.to_string(),
         payload: TreePayload::Loading(thread_pool.spawn(async move {
             if Path::new(&tmp_file_path_).exists() {
@@ -152,6 +156,10 @@ pub(crate) fn handle_model_load_finished(
         (&mut Text2d, &Model, &Info),
         (Without<Status>, Without<Version>, Without<Loading>),
     >,
+    mut model_version: Query<
+        (&mut Text2d, &Model, &Version, &Info),
+        (Without<Status>, Without<Loading>),
+    >,
 ) {
     if let Some(mut tree_factory) = tree_factory {
         let (mut message_text, mut message_color, _, _) = status_text
@@ -164,12 +172,14 @@ pub(crate) fn handle_model_load_finished(
                         message_text.0 = format!("Error during model load: {e}");
                         delete_by_path(&tree_factory.tmp_file_path);
                         delete_by_path(&tree_factory.target_cache_file_path);
+                        commands.remove_resource::<TreeLoadingTask>();
                         return;
                     }
-                    tree_factory.payload = TreePayload::Loaded(tree.ok().unwrap())
+                    tree_factory.payload = TreePayload::Loaded(tree.ok().unwrap());
+                    message_text.0 = format!("Initiating GPU View...");
                 }
+
                 // Process the tree in next iteration
-                message_text.0 = format!("Initiating GPU View..");
                 return;
             }
 
@@ -195,7 +205,13 @@ pub(crate) fn handle_model_load_finished(
                     &tree_factory.tmp_file_path,
                     &tree_factory.target_cache_file_path,
                 )
-                .expect("Expected to be able to remove temporary file at {tmp_file_path}");
+                .expect(
+                    &format!(
+                        "Expected to be able to rename temporary file {:?} to {:?}",
+                        tree_factory.tmp_file_path, tree_factory.target_cache_file_path
+                    )
+                    .to_string(),
+                );
             }
 
             let mut host = BoxTreeGPUHost { tree };
@@ -228,11 +244,37 @@ pub(crate) fn handle_model_load_finished(
             commands.insert_resource(host);
             pkv.set("last_loaded_model", &tree_factory.target_cache_file_path)
                 .expect("Expected to be able to store last_loaded_model setting");
+            pkv.set("last_loaded_model_path", &tree_factory.model_path)
+                .expect("Expected to be able to store last_loaded_model_path setting");
 
             // Set models name
             let (mut ui_model_name_text, _, _) = model_name
                 .single_mut()
                 .expect("Expected Model Name to be available in UI");
+
+            // Set model version
+            let (mut version_text, _, _, _) = model_version
+                .single_mut()
+                .expect("Expected to have model version text available in UI!");
+            let lib_version = voxelhex::version();
+            if lib_version == tree_factory.model_version {
+                version_text.0 = format!(
+                    "version: {}.{}.{}",
+                    lib_version.major(),
+                    lib_version.minor(),
+                    lib_version.patch(),
+                );
+            } else {
+                version_text.0 = format!(
+                    "model: v{}.{}.{} / app: v{}.{}.{}",
+                    tree_factory.model_version.major(),
+                    tree_factory.model_version.minor(),
+                    tree_factory.model_version.patch(),
+                    lib_version.major(),
+                    lib_version.minor(),
+                    lib_version.patch(),
+                );
+            }
 
             // Extend name with spaces until 40 characters
             let spaces_needed = 40 - model_name_text.len().min(40);
@@ -263,44 +305,65 @@ pub(crate) fn load_last_loaded_model(
             .single_mut()
             .expect("Expected Status message to be available in UI");
 
+        let default_model_path =
+            PathBuf::from("whisp/assets/models/gingerbread_house_by_kirra_luan.vox");
+
         *message_color = UiColor::from(Color::srgb(0.88, 0.62, 0.49));
 
-        if let Ok(file_path) = pkv.get::<String>("last_loaded_model") {
-            if Path::new(&file_path).exists() {
+        if let Ok(last_loaded_cache_file) = pkv.get::<String>("last_loaded_model") {
+            debug_assert!(pkv.get::<String>("last_loaded_model_path").is_ok());
+
+            if Path::new(&last_loaded_cache_file).exists() {
                 // Last successful model can be parsed directly
                 message_text.0 = "Trying to parse last loaded model..".to_string();
 
                 let thread_pool = AsyncComputeTaskPool::get();
-                let file_path_ = file_path.to_string();
+                let file_path_ = last_loaded_cache_file.to_string();
+                let model_version = BoxTree::<u32>::version(&last_loaded_cache_file)
+                    .expect("Expected to be able to parse model version");
+                let lib_version = voxelhex::version();
+                let model_path = pkv.get::<String>("last_loaded_model_path").ok();
+                if lib_version.compatible(&model_version) {
+                    commands.insert_resource(TreeLoadingTask {
+                        model_version,
+                        confirmed: true,
+                        model_path: model_path.unwrap_or_else(|| "model_not_found".to_string()),
+                        model_name: file_path_
+                            .split(".cache_")
+                            .last()
+                            .map(str::trim)
+                            .unwrap_or(&file_path_)
+                            .to_string(),
+                        tmp_file_path: file_path_.to_string(),
+                        target_cache_file_path: file_path_,
+                        payload: TreePayload::Loading(thread_pool.spawn(async move {
+                            match BoxTree::load(&last_loaded_cache_file) {
+                                Ok(tree) => Ok(tree),
+                                Err(err) => Err(err.to_string()),
+                            }
+                        })),
+                    });
+                } else {
+                    // Version incompatibility, try to re-parse model if still available
+                    delete_by_path(&last_loaded_cache_file);
+                    if let Some(model_path) = model_path {
+                        message_text.0 = "Cache version mismatch, re-parsing model".to_string();
 
-                let task = thread_pool.spawn(async move {
-                    match BoxTree::load(&file_path) {
-                        Ok(tree) => Ok(tree),
-                        Err(err) => Err(err.to_string()),
+                        commands
+                            .insert_resource(load_task_from_path(&PathBuf::from(model_path), true));
+                        return;
+                    } else {
+                        message_text.0 =
+                            "Cache version mismatch, model not found.. reverting to default model"
+                                .to_string();
+                        commands.insert_resource(load_task_from_path(&default_model_path, true));
                     }
-                });
-
-                commands.insert_resource(TreeLoadingTask {
-                    confirmed: true,
-                    model_name: file_path_
-                        .split(".cache_")
-                        .last()
-                        .map(str::trim)
-                        .unwrap_or(&file_path_)
-                        .to_string(),
-                    payload: TreePayload::Loading(task),
-                    tmp_file_path: file_path_.to_string(),
-                    target_cache_file_path: file_path_,
-                });
-                return;
+                };
             }
+        } else {
+            // Couldn't load previously loaded model, load default model
+            message_text.0 = "Loading default model..".to_string();
+            commands.insert_resource(load_task_from_path(&default_model_path, true));
         }
-
-        // Couldn't load previously loaded model, load default model
-        message_text.0 = "Loading default model..".to_string();
-        let default_model_path =
-            PathBuf::from("whisp/assets/models/gingerbread_house_by_kirra_luan.vox");
-
-        commands.insert_resource(load_task_from_path(&default_model_path, true));
     }
 }

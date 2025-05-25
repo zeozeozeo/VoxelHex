@@ -296,24 +296,14 @@ pub(crate) fn handle_settings_update(
         ),
         (Without<Width>, Without<Height>, Without<Output>),
     >,
-    mut output_resolution_linked: Query<(
-        &mut Sprite,
-        &Output,
-        &Link,
-        &crate::ui::components::Button,
-    )>,
-    mut viewport_resolution_linked: Query<
+    mut resolutions_linked: Query<(&mut Sprite, &Link, &crate::ui::components::Button)>,
+    mut camera_locked_icon: Query<
+        (&mut Visibility, &crate::ui::components::Camera, &Info),
         (
-            &mut Sprite,
-            &crate::ui::components::Camera,
-            &Link,
-            &crate::ui::components::Button,
-        ),
-        (
-            Without<Width>,
-            Without<Height>,
-            Without<Output>,
-            Without<Depth>,
+            Without<Link>,
+            Without<Container>,
+            Without<Expanded>,
+            Without<UserInterface>,
         ),
     >,
 ) {
@@ -328,6 +318,9 @@ pub(crate) fn handle_settings_update(
         let (mut expanded_visibility, _, _) = info_panel_button_expanded
             .single_mut()
             .expect("Expected Close Shortcuts Panel Button to be available in UI");
+        let (mut camera_locked_visibility, _, _) = camera_locked_icon
+            .single_mut()
+            .expect("Expected Camera Lock Button to be available in UI");
         ui_state.hide_ui = !ui_state.hide_ui;
         pkv.set("ui_hidden", &ui_state.hide_ui.to_string())
             .expect("Expected to be able to store setting ui_hidden!");
@@ -335,8 +328,10 @@ pub(crate) fn handle_settings_update(
             *visibility = Visibility::Hidden;
             *mini_visibility = Visibility::Hidden;
             *expanded_visibility = Visibility::Hidden;
+            *camera_locked_visibility = Visibility::Hidden;
         } else {
             *visibility = Visibility::Visible;
+            *camera_locked_visibility = Visibility::Visible;
             if ui_state.hide_shortcuts {
                 *mini_visibility = Visibility::Visible;
                 *expanded_visibility = Visibility::Hidden;
@@ -373,14 +368,6 @@ pub(crate) fn handle_settings_update(
     let (mut fov_bar_size, mut fov_bar_transform, _, _, _) = fov_slider_bar
         .single_mut()
         .expect("Expected FOV Slider bar to be available in UI");
-
-    let (mut output_resolution_sprite, _, _, _) = output_resolution_linked
-        .single_mut()
-        .expect("Expected Output Resolution Linked Button to be available in UI");
-
-    let (mut viewport_resolution_sprite, _, _, _) = viewport_resolution_linked
-        .single_mut()
-        .expect("Expected Output Resolution Linked Button to be available in UI");
 
     let fov_bar_value_extent = (fov_ui_action.boundaries[1] - fov_ui_action.boundaries[0]) as f32;
     let fov_bar_unit = fov_container_size.x / fov_bar_value_extent;
@@ -524,7 +511,9 @@ pub(crate) fn handle_settings_update(
         viewport_height_text.0 = "100".to_string();
         view_distance_text.0 = "1024".to_string();
 
-        *output_resolution_sprite = Sprite::from_image(asset_server.load("ui/linked_icon.png"));
-        *viewport_resolution_sprite = Sprite::from_image(asset_server.load("ui/linked_icon.png"));
+        debug_assert_eq!(2, resolutions_linked.iter().count());
+        for (mut resolution_sprite, _, _) in resolutions_linked.iter_mut() {
+            *resolution_sprite = Sprite::from_image(asset_server.load("ui/linked_icon.png"));
+        }
     }
 }

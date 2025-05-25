@@ -2,7 +2,11 @@ use crate::{
     loader::TreeLoadingTask,
     ui::{components::*, UiState},
 };
-use bevy::{input::mouse::MouseMotion, prelude::*};
+use bevy::{
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    input::mouse::MouseMotion,
+    prelude::*,
+};
 use bevy_lunex::prelude::*;
 use bevy_pkv::PkvStore;
 
@@ -21,13 +25,38 @@ pub(crate) struct OutputResolutionUpdated {
     to: u32,
 }
 
-#[derive(Resource)]
+#[derive(Debug, Resource)]
 pub(crate) struct ModelLoadAnimationState {
     value_range: u32,
     bottom_value: u32,
     top_value: u32,
     speed: f32,
     spread: f32,
+}
+
+pub(crate) fn update_performance_stats(
+    time: Res<Time>,
+    ui_state: Res<UiState>,
+    diagnostics: Res<DiagnosticsStore>,
+    mut performance_text: Query<(&mut Text2d, &Performance)>,
+) {
+    if ui_state.hide_ui || 0 != (time.elapsed().subsec_millis() % 100) {
+        // No need to update User interface too frequently or when it is hidden
+        return;
+    }
+    if let Some(frametime_value) = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|frametime| frametime.smoothed())
+    {
+        let (mut performance_text, _) = performance_text
+            .single_mut()
+            .expect("Expected FPS counter to be available in UI");
+        performance_text.0 = format!(
+            "{:.001}fps/{:.001}ms",
+            1000. / frametime_value,
+            frametime_value
+        );
+    }
 }
 
 pub(crate) fn handle_model_load_animation(
@@ -86,7 +115,7 @@ pub(crate) fn handle_model_load_animation(
         progress_bar_size.x = container_size.x * size_percentage;
         progress_bar_transform.translation.x =
             -(0.5 - value_mid_percentage * container_size.x) - container_size.x * 0.5;
-        animation_state.speed += 0.0001;
+        animation_state.speed += 0.000001;
     } else {
         // The prorgess bar should be full when the model isn't loading
         progress_bar_size.x = container_size.x;
@@ -337,7 +366,13 @@ pub(crate) fn setup(
             let (mini_info_panel, _, _) = info_panel_mini
                 .single()
                 .expect("Expected Mini Shortcuts Button to be available in UI");
-            commands.entity(maxi_info_panel).insert(Visibility::Visible);
+            commands
+                .entity(maxi_info_panel)
+                .insert(if !ui_state.hide_ui {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                });
             commands.entity(mini_info_panel).insert(Visibility::Hidden);
             ui_state.hide_shortcuts = false;
             pkv.set("shortcuts_hidden", &ui_state.hide_shortcuts.to_string())
@@ -361,7 +396,13 @@ pub(crate) fn setup(
                 .single()
                 .expect("Expected Mini Shortcuts Button to be available in UI");
             commands.entity(maxi_info_panel).insert(Visibility::Hidden);
-            commands.entity(mini_info_panel).insert(Visibility::Visible);
+            commands
+                .entity(mini_info_panel)
+                .insert(if !ui_state.hide_ui {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                });
             ui_state.hide_shortcuts = true;
             pkv.set("shortcuts_hidden", &ui_state.hide_shortcuts.to_string())
                 .expect("Expected to be able to store setting shortcuts_hidden");

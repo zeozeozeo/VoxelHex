@@ -213,7 +213,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                             .size(Ab((150.0, 30.0)))
                                             .pack(),
                                         UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
-                                        Text2d::new("120fps / 5ms"),
+                                        Text2d::new("120fps/5ms"),
                                     ));
                                 });
 
@@ -507,7 +507,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 UiLayout::window()
                                     .anchor(Anchor::TopLeft)
                                     .pos(Ab((5., 65.)))
-                                    .size(Ab((100., 25.)))
+                                    .size(Ab((75., 25.)))
                                     .pack(),
                                 UiColor::from(Color::srgb(0.88, 0.62, 0.49)),
                                 UiTextSize::from(Ab(15.0)),
