@@ -1,14 +1,63 @@
-use crate::boxtree::BOX_NODE_CHILDREN_COUNT;
-use crate::boxtree::{
-    types::{BrickData, MIPMapStrategy, MIPResamplingMethods, NodeChildren, NodeContent},
-    Albedo, BoxTree,
+use crate::{
+    boxtree::{
+        types::{BrickData, MIPMapStrategy, MIPResamplingMethods, NodeChildren, NodeContent},
+        Albedo, BoxTree, BOX_NODE_CHILDREN_COUNT,
+    },
+    object_pool::ObjectPool,
+    Version,
 };
-use crate::object_pool::ObjectPool;
 use bendy::{
-    decoding::{FromBencode, Object},
+    decoding::{Error, FromBencode, Object},
     encoding::{Error as BencodeError, SingleItemEncoder, ToBencode},
 };
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
+
+impl ToBencode for Version {
+    const MAX_DEPTH: usize = 2;
+    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), BencodeError> {
+        encoder.emit_list(|e| {
+            e.emit_int(self.major())?;
+            e.emit_int(self.minor())?;
+            e.emit_int(self.patch())
+        })
+    }
+}
+
+impl FromBencode for Version {
+    fn decode_bencode_object(data: Object) -> Result<Self, bendy::decoding::Error> {
+        match data {
+            Object::List(mut list) => {
+                let major = match list.next_object()?.expect("Expected Major version string") {
+                    Object::Integer(i) => Ok(i.parse::<u32>()?),
+                    _ => Err(bendy::decoding::Error::unexpected_token(
+                        "int field library major version",
+                        "Something else",
+                    )),
+                }?;
+                let minor = match list.next_object()?.expect("Expected Minor version string") {
+                    Object::Integer(i) => Ok(i.parse::<u32>()?),
+                    _ => Err(bendy::decoding::Error::unexpected_token(
+                        "int field library major version",
+                        "Something else",
+                    )),
+                }?;
+                let patch = match list.next_object()?.expect("Expected Patch version string") {
+                    Object::Integer(i) => Ok(i.parse::<u32>()?),
+                    _ => Err(bendy::decoding::Error::unexpected_token(
+                        "int field library major version",
+                        "Something else",
+                    )),
+                }?;
+                Ok(crate::Version {
+                    major,
+                    minor,
+                    patch,
+                })
+            }
+            _ => Err(bendy::decoding::Error::unexpected_token("List", "not List")),
+        }
+    }
+}
 
 //####################################################################################
 //  █████   █████    ███████    █████ █████ ██████████ █████
@@ -565,13 +614,39 @@ impl FromBencode for MIPResamplingMethods {
 //  ░░░███████░   ░░█████████     █████    █████   █████ ██████████ ██████████
 //    ░░░░░░░      ░░░░░░░░░     ░░░░░    ░░░░░   ░░░░░ ░░░░░░░░░░ ░░░░░░░░░░
 //####################################################################################
+const SERIALIZE_MAX_DEPTH: usize = 10;
+impl<T> BoxTree<T>
+where
+    T: ToBencode + Default + Clone + Eq + Hash,
+{
+    /// The number of bytes to read from the bytes of an octree that makes sure
+    /// that the version object is included in the included bytes
+    pub(crate) fn bytes_until_version() -> usize {
+        std::mem::size_of::<crate::Version>() * 2
+    }
+
+    pub(crate) fn parse_version(bytes: &[u8]) -> Result<crate::Version, Error> {
+        match bendy::decoding::Decoder::new(bytes)
+            .with_max_depth(SERIALIZE_MAX_DEPTH)
+            .next_object()?
+            .expect("Expected BoxTree object list")
+        {
+            Object::List(mut list) => crate::Version::decode_bencode_object(
+                list.next_object()?.expect("Expected Version object bytes"),
+            ),
+            _ => Err(bendy::decoding::Error::unexpected_token("List", "not List")),
+        }
+    }
+}
+
 impl<T> ToBencode for BoxTree<T>
 where
     T: ToBencode + Default + Clone + Eq + Hash,
 {
-    const MAX_DEPTH: usize = 10;
+    const MAX_DEPTH: usize = SERIALIZE_MAX_DEPTH;
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), BencodeError> {
         encoder.emit_list(|e| {
+            e.emit(crate::version())?;
             e.emit_int(self.auto_simplify as u8)?;
             e.emit_int(self.boxtree_size)?;
             e.emit_int(self.brick_dim)?;
@@ -593,6 +668,7 @@ where
     fn decode_bencode_object(data: Object) -> Result<Self, bendy::decoding::Error> {
         match data {
             Object::List(mut list) => {
+                list.next_object()?.expect("Expected Version object string");
                 let auto_simplify = match list.next_object()?.unwrap() {
                     Object::Integer("0") => Ok(false),
                     Object::Integer("1") => Ok(true),

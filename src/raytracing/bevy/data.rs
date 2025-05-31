@@ -31,7 +31,7 @@ use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 
 fn boxtree_properties<
@@ -109,7 +109,7 @@ impl<
     /// Creates GPU compatible data renderable on the GPU from an BoxTree
     pub fn create_new_view(
         &mut self,
-        vhx_view_set: &mut VhxViewSet,
+        viewset: &mut VhxViewSet,
         nodes_in_view: usize,
         viewport: Viewport,
         resolution: [u32; 2],
@@ -142,12 +142,14 @@ impl<
             uploaded_color_palette_size: 0,
         };
         let output_texture = create_output_texture(resolution, &mut images);
-        vhx_view_set.views.push(Arc::new(Mutex::new(BoxTreeGPUView {
+
+        viewset.views.push(Arc::new(RwLock::new(BoxTreeGPUView {
             resolution,
             reload: false,
             rebuild: false,
             init_data_sent: false,
             data_ready: false,
+            new_images_ready: true,
             new_resolution: None,
             new_output_texture: None,
             new_depth_texture: None,
@@ -160,23 +162,12 @@ impl<
                 viewport,
             },
         })));
-        vhx_view_set.resources.push(None);
+        viewset.resources.push(None);
+        viewset.changed = true;
 
-        debug_assert_eq!(vhx_view_set.resources.len(), vhx_view_set.views.len());
-        vhx_view_set.views.len() - 1
+        debug_assert_eq!(viewset.resources.len(), viewset.views.len());
+        viewset.views.len() - 1
     }
-}
-
-/// Handles data sync between Bevy main(CPU) world and rendering world
-pub(crate) fn sync_with_main_world(// tree_view: Option<ResMut<BoxTreeGPUView>>,
-    // mut world: ResMut<bevy::render::MainWorld>,
-) {
-    // This function is unused because ExtractResource plugin is handling the sync
-    // However, it is only one way: MainWorld --> RenderWorld
-    // Any modification here is overwritten by the plugin if it is active,
-    // in order to enable data flow in the opposite direction, extractresource plugin
-    // needs to be disabled, and the sync logic (both ways) needs to be implemented here
-    // refer to: https://www.reddit.com/r/bevy/comments/1ay50ee/copy_from_render_world_to_main_world/
 }
 
 //##############################################################################
@@ -235,57 +226,61 @@ fn read_buffer(
 /// Based on https://docs.rs/bevy/latest/src/gpu_readback/gpu_readback.rs.html
 pub(crate) fn handle_gpu_readback(
     render_device: Res<RenderDevice>,
-    vhx_view_set: ResMut<VhxViewSet>,
-    vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
+    mut viewset: Option<ResMut<VhxViewSet>>,
+    mut vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
 ) {
-    if vhx_pipeline.is_some() {
-        let mut view = vhx_view_set.views[0].lock().unwrap();
-        let resources = vhx_view_set.resources[0].as_ref();
+    let (Some(_vhx_pipeline), Some(viewset)) = (vhx_pipeline.as_mut(), viewset.as_mut()) else {
+        return; // Nothing to without the pipeline or a viewset
+    };
+    if viewset.is_empty() {
+        return; // Nothing to do without views..
+    }
+    let mut view = viewset.views[0].write().unwrap();
+    let resources = viewset.resources[0].as_ref();
 
-        if resources.is_some() {
-            let resources = resources.unwrap();
+    if resources.is_some() {
+        let resources = resources.unwrap();
 
-            // init sequence: checking if data is written to the GPU yet
-            if view.init_data_sent && !view.data_ready {
-                let mut received_value = Vec::new();
-                read_buffer(
-                    &render_device,
-                    &resources.readable_used_bits_buffer,
-                    0..1,
-                    &mut received_value,
-                );
-                if view.data_handler.render_data.used_bits[0] == received_value[0] {
-                    view.data_ready = true;
-                }
-            }
-
-            // Read node requests
+        // init sequence: checking if data is written to the GPU yet
+        if view.init_data_sent && !view.data_ready {
+            let mut received_value = Vec::new();
             read_buffer(
                 &render_device,
-                &resources.readable_node_requests_buffer,
-                0..view.spyglass.node_requests.len(),
-                &mut view.spyglass.node_requests,
+                &resources.readable_used_bits_buffer,
+                0..1,
+                &mut received_value,
             );
-
-            let any_nodes_requested = {
-                let mut is_metadata_required_this_loop = false;
-                for node_request in &view.spyglass.node_requests {
-                    if *node_request != empty_marker::<u32>() {
-                        is_metadata_required_this_loop = true;
-                        break;
-                    }
-                }
-                is_metadata_required_this_loop
-            };
-
-            if any_nodes_requested && view.data_ready {
-                read_buffer(
-                    &render_device,
-                    &resources.readable_used_bits_buffer,
-                    0..view.data_handler.render_data.used_bits.len(),
-                    &mut view.data_handler.render_data.used_bits,
-                );
+            if view.data_handler.render_data.used_bits[0] == received_value[0] {
+                view.data_ready = true;
             }
+        }
+
+        // Read node requests
+        read_buffer(
+            &render_device,
+            &resources.readable_node_requests_buffer,
+            0..view.spyglass.node_requests.len(),
+            &mut view.spyglass.node_requests,
+        );
+
+        let any_nodes_requested = {
+            let mut is_metadata_required_this_loop = false;
+            for node_request in &view.spyglass.node_requests {
+                if *node_request != empty_marker::<u32>() {
+                    is_metadata_required_this_loop = true;
+                    break;
+                }
+            }
+            is_metadata_required_this_loop
+        };
+
+        if any_nodes_requested && view.data_ready {
+            read_buffer(
+                &render_device,
+                &resources.readable_used_bits_buffer,
+                0..view.data_handler.render_data.used_bits.len(),
+                &mut view.data_handler.render_data.used_bits,
+            );
         }
     }
 }
@@ -379,65 +374,71 @@ pub(crate) fn write_to_gpu<
     #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
     #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
 >(
-    tree_gpu_host: Option<ResMut<BoxTreeGPUHost<T>>>,
-    vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
-    vhx_view_set: ResMut<VhxViewSet>,
+    mut tree_gpu_host: Option<ResMut<BoxTreeGPUHost<T>>>,
+    mut vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
+    mut viewset: Option<ResMut<VhxViewSet>>,
 ) {
-    if let (Some(pipeline), Some(tree_host)) = (vhx_pipeline, tree_gpu_host) {
-        let mut view = vhx_view_set.views[0].lock().unwrap();
-
-        // Initial BoxTree data upload
-        if !view.init_data_sent || view.reload {
-            if let Some(resources) = &vhx_view_set.resources[0] {
-                // write data for root node
-                view.data_handler
-                    .add_node(&tree_host.tree, BoxTree::<T>::ROOT_NODE_KEY as usize);
-
-                // Set some well recognizable init value
-                view.data_handler.render_data.used_bits[0] = 0xBEEF;
-
-                // Write out the initial data package
-                write_range_to_buffer(
-                    &view.data_handler.render_data.used_bits,
-                    0..1,
-                    &resources.used_bits_buffer,
-                    &pipeline.render_queue,
-                );
-                write_range_to_buffer(
-                    &view.data_handler.render_data.node_metadata,
-                    0..1,
-                    &resources.node_metadata_buffer,
-                    &pipeline.render_queue,
-                );
-                write_range_to_buffer(
-                    &view.data_handler.render_data.node_children,
-                    0..BOX_NODE_CHILDREN_COUNT,
-                    &resources.node_children_buffer,
-                    &pipeline.render_queue,
-                );
-                write_range_to_buffer(
-                    &view.data_handler.render_data.node_mips,
-                    0..1,
-                    &resources.node_mips_buffer,
-                    &pipeline.render_queue,
-                );
-                write_range_to_buffer(
-                    &view.data_handler.render_data.node_ocbits,
-                    0..2,
-                    &resources.node_ocbits_buffer,
-                    &pipeline.render_queue,
-                );
-                view.init_data_sent = true;
-                view.reload = false;
-            }
+    if let (Some(pipeline), Some(tree_host), Some(viewset)) = (
+        vhx_pipeline.as_mut(),
+        tree_gpu_host.as_mut(),
+        viewset.as_mut(),
+    ) {
+        if viewset.is_empty() {
+            return; // Nothing to do without views..
         }
-        let resources = if let Some(resources) = &vhx_view_set.resources[0] {
+
+        let mut view = viewset.views[0].write().unwrap();
+        let render_queue = &pipeline.render_queue;
+        let resources = if let Some(resources) = viewset.resources[0].as_ref() {
             resources
         } else {
             // No resources available yet, can't write to them
             return;
         };
-        let render_queue = &pipeline.render_queue;
+
+        // Initial BoxTree data upload
+        if !view.init_data_sent || view.reload {
+            // write data for root node
+            view.data_handler
+                .add_node(&tree_host.tree, BoxTree::<T>::ROOT_NODE_KEY as usize);
+
+            // Set some well recognizable init value
+            view.data_handler.render_data.used_bits[0] = 0xBEEF;
+
+            // Write out the initial data package
+            write_range_to_buffer(
+                &view.data_handler.render_data.used_bits,
+                0..1,
+                &resources.used_bits_buffer,
+                &pipeline.render_queue,
+            );
+            write_range_to_buffer(
+                &view.data_handler.render_data.node_metadata,
+                0..1,
+                &resources.node_metadata_buffer,
+                &pipeline.render_queue,
+            );
+            write_range_to_buffer(
+                &view.data_handler.render_data.node_children,
+                0..BOX_NODE_CHILDREN_COUNT,
+                &resources.node_children_buffer,
+                &pipeline.render_queue,
+            );
+            write_range_to_buffer(
+                &view.data_handler.render_data.node_mips,
+                0..1,
+                &resources.node_mips_buffer,
+                &pipeline.render_queue,
+            );
+            write_range_to_buffer(
+                &view.data_handler.render_data.node_ocbits,
+                0..2,
+                &resources.node_ocbits_buffer,
+                &pipeline.render_queue,
+            );
+            view.init_data_sent = true;
+            view.reload = false;
+        }
 
         // Data updates for spyglass viewport
         if view.spyglass.viewport_changed {
@@ -701,7 +702,7 @@ pub(crate) fn write_to_gpu<
         let host_color_count = tree.map_to_color_index_in_palette.keys().len();
         let color_palette_size_diff =
             host_color_count - view.data_handler.uploaded_color_palette_size;
-        let resources = &vhx_view_set.resources[0].as_ref().unwrap();
+        let resources = &viewset.resources[0].as_ref().unwrap();
 
         debug_assert!(
             host_color_count >= view.data_handler.uploaded_color_palette_size,

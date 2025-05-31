@@ -156,7 +156,7 @@ impl MIPResaplingFunction for MIPResamplingMethods {
                                         (new_albedo.a as f32).powf(2.),
                                     ));
                                 }
-                                (Some(ref mut current_avg_albedo), Some(new_albedo)) => {
+                                (Some(current_avg_albedo), Some(new_albedo)) => {
                                     entry_count += 1;
                                     current_avg_albedo.0 += (new_albedo.r as f32).powf(2.);
                                     current_avg_albedo.1 += (new_albedo.g as f32).powf(2.);
@@ -604,7 +604,7 @@ impl Default for MIPMapStrategy {
         MIPMapStrategy {
             enabled: false,
             resampling_methods: HashMap::from([
-                (1, MIPResamplingMethods::PointFilter),
+                (1, MIPResamplingMethods::Posterize(0.05)),
                 (2, MIPResamplingMethods::BoxFilter),
                 (3, MIPResamplingMethods::BoxFilter),
                 (4, MIPResamplingMethods::BoxFilter),

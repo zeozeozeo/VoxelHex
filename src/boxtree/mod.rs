@@ -24,13 +24,19 @@ use crate::{
         Cube,
     },
 };
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, path::Path};
 
 #[cfg(feature = "serialization")]
 use serde::{de::DeserializeOwned, Serialize};
 
 #[cfg(feature = "bytecode")]
 use bendy::{decoding::FromBencode, encoding::ToBencode};
+
+#[cfg(feature = "bytecode")]
+use std::{
+    fs::File,
+    io::{Error, Read, Write},
+};
 
 //####################################################################################
 //     ███████      █████████  ███████████ ███████████   ██████████ ██████████
@@ -144,14 +150,20 @@ impl<
     /// parses the data structure from a byte string
     #[cfg(feature = "bytecode")]
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self::from_bencode(&bytes).expect("Failed to serialize Octree from Bytes")
+        Self::from_bencode(&bytes).expect("Failed to de-serialize Octree from bytes")
+    }
+
+    #[cfg(feature = "bytecode")]
+    pub fn version<P: AsRef<Path>>(path: P) -> Result<crate::Version, Error> {
+        let mut file = File::open(path)?;
+        let mut bytes = vec![0; Self::bytes_until_version()];
+        file.read_exact(&mut bytes)?;
+        Ok(Self::parse_version(&bytes).expect("Expected to be able to parse Boxtree vrsion"))
     }
 
     /// saves the data structure to the given file path
     #[cfg(feature = "bytecode")]
-    pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
-        use std::fs::File;
-        use std::io::Write;
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         let mut file = File::create(path)?;
         file.write_all(&self.to_bytes())?;
         Ok(())
@@ -159,9 +171,7 @@ impl<
 
     /// loads the data structure from the given file path
     #[cfg(feature = "bytecode")]
-    pub fn load(path: &str) -> Result<Self, std::io::Error> {
-        use std::fs::File;
-        use std::io::Read;
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let mut file = File::open(path)?;
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;

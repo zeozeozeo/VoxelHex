@@ -18,10 +18,10 @@ use bimap::BiHashMap;
 use std::{
     hash::Hash,
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 
-#[derive(Clone, ShaderType)]
+#[derive(Debug, Clone, ShaderType)]
 pub struct BoxTreeMetaData {
     /// Color of the ambient light in the render
     pub ambient_light_color: V3cf32,
@@ -86,10 +86,11 @@ where
     pub tree: BoxTree<T>,
 }
 
-#[derive(Default, Resource, Clone, TypePath, ExtractResource)]
+#[derive(Debug, Resource, Clone, TypePath)]
 #[type_path = "shocovox::gpu::VhxViewSet"]
 pub struct VhxViewSet {
-    pub views: Vec<Arc<Mutex<BoxTreeGPUView>>>,
+    pub(crate) changed: bool,
+    pub(crate) views: Vec<Arc<RwLock<BoxTreeGPUView>>>,
     pub(crate) resources: Vec<Option<BoxTreeRenderDataResources>>,
 }
 
@@ -113,7 +114,7 @@ pub struct BoxTreeSpyGlass {
 }
 
 /// A View of an Octree
-#[derive(Resource, Clone)]
+#[derive(Debug, Resource, Clone)]
 pub struct BoxTreeGPUView {
     /// The camera for casting the rays
     pub spyglass: BoxTreeSpyGlass,
@@ -125,10 +126,13 @@ pub struct BoxTreeGPUView {
     pub(crate) rebuild: bool,
 
     /// True if the initial data already sent to GPU
-    pub init_data_sent: bool,
+    pub(crate) init_data_sent: bool,
 
     /// Sets to true if related data on the GPU matches with CPU
-    pub data_ready: bool,
+    pub(crate) data_ready: bool,
+
+    /// Sets to true if new pipeline textures are ready
+    pub(crate) new_images_ready: bool,
 
     /// The data handler responsible for uploading data to the GPU
     pub(crate) data_handler: BoxTreeGPUDataHandler,
@@ -162,7 +166,7 @@ pub(crate) enum BrickOwnedBy {
     NodeAsMIP(u32),
 }
 
-#[derive(Resource, Clone)]
+#[derive(Debug, Resource, Clone)]
 pub struct BoxTreeGPUDataHandler {
     pub(crate) render_data: BoxTreeRenderData,
     pub(crate) victim_node: VictimPointer,
@@ -172,7 +176,7 @@ pub struct BoxTreeGPUDataHandler {
     pub(crate) uploaded_color_palette_size: usize,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct BoxTreeRenderDataResources {
     pub(crate) render_stage_prepass_bind_group: BindGroup,
     pub(crate) render_stage_main_bind_group: BindGroup,
@@ -229,7 +233,7 @@ pub(crate) struct CacheUpdatePackage<'a> {
     pub(crate) modified_usage_range: Range<usize>,
 }
 
-#[derive(Clone, TypePath)]
+#[derive(Debug, Clone, TypePath)]
 #[type_path = "shocovox::gpu::ShocoVoxRenderData"]
 pub struct BoxTreeRenderData {
     /// CPU only field, contains stored MIP feature enabled state
@@ -296,8 +300,8 @@ pub struct BoxTreeRenderData {
     pub(crate) color_palette: Vec<Vec4>,
 }
 
-pub(crate) const VHX_PREPASS_STAGE_ID: u32 = 01;
-pub(crate) const VHX_RENDER_STAGE_ID: u32 = 02;
+pub(crate) const VHX_PREPASS_STAGE_ID: u32 = 0x01;
+pub(crate) const VHX_RENDER_STAGE_ID: u32 = 0x02;
 
 #[derive(Debug, Clone, Copy, ShaderType)]
 pub(crate) struct RenderStageData {
@@ -307,7 +311,6 @@ pub(crate) struct RenderStageData {
 
 #[derive(Resource)]
 pub(crate) struct VhxRenderPipeline {
-    pub update_tree: bool,
     pub(crate) render_queue: RenderQueue,
     pub(crate) update_pipeline: CachedComputePipelineId,
     pub(crate) render_stage_bind_group_layout: BindGroupLayout,
