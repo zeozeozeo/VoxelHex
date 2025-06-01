@@ -6,7 +6,6 @@ mod tests;
 
 use crate::{
     boxtree::{
-        child_sectant_for,
         types::{BoxTreeEntry, BrickData, NodeChildren, NodeContent, PaletteIndexValues},
         Albedo, BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
@@ -16,7 +15,7 @@ use crate::{
         math::{
             flat_projection, matrix_index_for, octant_in_sectants, offset_sectant, vector::V3c,
         },
-        update_size_within, Cube,
+        Cube,
     },
 };
 use num_traits::Zero;
@@ -167,9 +166,9 @@ impl<
         target_bounds: &Cube,
         target_child_sectant: usize,
         position: &V3c<u32>,
-        size: u32,
+        size: &V3c<u32>,
         target_content: PaletteIndexValues,
-    ) -> usize {
+    ) -> bool {
         // Update the leaf node, if it is possible as is, and if it's even needed to update
         // and decide if the node content needs to be divided into bricks, and the update function to be called again
         match self.nodes.get_mut(node_key) {
@@ -185,21 +184,20 @@ impl<
                             self.brick_dim.pow(3) as usize
                         ];
                         // update the new empty brick at the given position
-                        let update_size = Self::update_brick(
+                        Self::update_brick(
                             overwrite_if_empty,
                             &mut new_brick,
                             target_bounds,
                             self.brick_dim,
                             *position,
-                            size,
+                            *size,
                             &target_content,
                         );
                         bricks[target_child_sectant] = BrickData::Parted(new_brick);
-                        update_size
+                        true
                     }
                     BrickData::Solid(voxel) => {
                         // In case the data doesn't match the current contents of the node, it needs to be subdivided
-                        let update_size;
                         if (NodeContent::pix_points_to_empty(
                             &target_content,
                             &self.voxel_color_palette,
@@ -216,21 +214,21 @@ impl<
                         {
                             // create new brick and update it at the given position
                             let mut new_brick = vec![*voxel; self.brick_dim.pow(3) as usize];
-                            update_size = Self::update_brick(
+                            Self::update_brick(
                                 overwrite_if_empty,
                                 &mut new_brick,
                                 target_bounds,
                                 self.brick_dim,
                                 *position,
-                                size,
+                                *size,
                                 &target_content,
                             );
                             bricks[target_child_sectant] = BrickData::Parted(new_brick);
+                            true
                         } else {
                             // Since the Voxel already equals the data to be set, no need to update anything
-                            update_size = 0;
+                            false
                         }
-                        update_size
                     }
                     BrickData::Parted(brick) => {
                         // Simply update the brick at the given position
@@ -240,9 +238,10 @@ impl<
                             target_bounds,
                             self.brick_dim,
                             *position,
-                            size,
+                            *size,
                             &target_content,
-                        )
+                        );
+                        true
                     }
                 }
             }
@@ -271,18 +270,18 @@ impl<
                                 self.add_to_palette(&BoxTreeEntry::Empty);
                                 self.brick_dim.pow(3) as usize
                             ];
-                            let update_size = Self::update_brick(
+                            Self::update_brick(
                                 overwrite_if_empty,
                                 &mut new_brick,
                                 target_bounds,
                                 self.brick_dim,
                                 *position,
-                                size,
+                                *size,
                                 &target_content,
                             );
                             new_leaf_content[target_child_sectant] = BrickData::Parted(new_brick);
                             *self.nodes.get_mut(node_key) = NodeContent::Leaf(new_leaf_content);
-                            return update_size;
+                            return true;
                         }
                     }
                     BrickData::Solid(voxel) => {
@@ -315,7 +314,7 @@ impl<
                             // Data request is to clear, it aligns with the voxel content,
                             // it's enough to update the node content in this case
                             *self.nodes.get_mut(node_key) = NodeContent::Nothing;
-                            return 0;
+                            return false;
                         }
 
                         if !NodeContent::pix_points_to_empty(
@@ -354,7 +353,7 @@ impl<
                         }
 
                         // data request aligns with node content
-                        return 0;
+                        return false;
                     }
                     BrickData::Parted(brick) => {
                         // Check if the voxel at the target position matches with the data update request
@@ -392,20 +391,21 @@ impl<
                             )
                         {
                             // Target voxel matches with the data request, there's nothing to do!
-                            return 0;
+                            return false;
                         }
 
                         // If uniform leaf is the size of one brick, the brick is updated as is
                         if node_bounds.size <= self.brick_dim as f32 && self.brick_dim > 1 {
-                            return Self::update_brick(
+                            Self::update_brick(
                                 overwrite_if_empty,
                                 brick,
                                 node_bounds,
                                 self.brick_dim,
                                 *position,
-                                size,
+                                *size,
                                 &target_content,
                             );
+                            return true;
                         }
 
                         // the data at the position inside the brick doesn't match the given data,
@@ -419,29 +419,27 @@ impl<
                         // Each brick is mapped to take up one subsection of the current data
                         let child_bricks =
                             Self::dilute_brick_data(std::mem::take(brick), self.brick_dim);
-                        let mut update_size = 0;
+                        let mut updated = false;
                         for (sectant, mut new_brick) in child_bricks.into_iter().enumerate() {
                             // Also update the brick if it is the target
                             if sectant == target_child_sectant {
-                                update_size = Self::update_brick(
+                                Self::update_brick(
                                     overwrite_if_empty,
                                     &mut new_brick,
                                     target_bounds,
                                     self.brick_dim,
                                     *position,
-                                    size,
+                                    *size,
                                     &target_content,
                                 );
+                                updated |= true;
                             }
                             leaf_data[sectant] = BrickData::Parted(new_brick);
                         }
 
                         *self.nodes.get_mut(node_key) = NodeContent::Leaf(leaf_data);
-                        debug_assert_ne!(
-                            0, update_size,
-                            "Expected Leaf node to be updated in operation"
-                        );
-                        return update_size;
+                        debug_assert!(updated, "Expected Leaf node to be updated in operation");
+                        return updated;
                     }
                 }
                 self.leaf_update(
@@ -509,81 +507,6 @@ impl<
                 )
             }
         }
-    }
-
-    /// Calls the given function for every child position inside the given update range
-    /// The function is called at least once
-    /// * `node_bounds` - The bounds of the updated node
-    /// * `position` - The position of the intended update
-    /// * `update_size` - Range of the intended update starting from position
-    /// * `target_size` - The size of one child inside the updated node
-    /// * `fun` - The function to execute
-    ///
-    /// returns with update size
-    fn execute_for_relevant_sectants<F: FnMut(V3c<u32>, u32, u8, &Cube)>(
-        node_bounds: &Cube,
-        position: &V3c<u32>,
-        update_size: u32,
-        target_size: f32,
-        mut fun: F,
-    ) -> usize {
-        let children_updated_dimension =
-            (update_size_within(node_bounds, position, update_size) as f32 / target_size).ceil()
-                as u32;
-        for x in 0..children_updated_dimension {
-            for y in 0..children_updated_dimension {
-                for z in 0..children_updated_dimension {
-                    let shifted_position = V3c::from(*position)
-                        + V3c::unit(target_size) * V3c::new(x as f32, y as f32, z as f32);
-                    let target_child_sectant = child_sectant_for(node_bounds, &shifted_position);
-                    let target_bounds = node_bounds.child_bounds_for(target_child_sectant);
-
-                    // In case smaller brick dimensions, it might happen that one update affects multiple sectants
-                    // e.g. when a uniform leaf has a parted brick of 2x2x2 --> Setting a value in one element
-                    // affects multiple sectants. In these cases, the target size is 0.5, and positions
-                    // also move inbetween voxels. Logically this is needed for e.g. setting the correct occupied bits
-                    // for a given node. The worst case scenario is some cells are given a value multiple times,
-                    // which is acceptable for the time being
-                    let target_bounds = Cube {
-                        min_position: target_bounds.min_position.floor(),
-                        size: target_bounds.size.ceil(),
-                    };
-                    let (position_in_target, update_size_in_target) = if 0 == x && 0 == y && 0 == z
-                    {
-                        // Update starts from the start position, goes until end of first target cell
-                        (
-                            *position,
-                            update_size_within(&target_bounds, position, update_size),
-                        )
-                    } else {
-                        // Update starts from the start from update position projected onto target bound edge
-                        let update_position = V3c::new(
-                            position.x.max(target_bounds.min_position.x as u32),
-                            position.y.max(target_bounds.min_position.y as u32),
-                            position.z.max(target_bounds.min_position.z as u32),
-                        );
-                        let trimmed_update_vector =
-                            *position + V3c::unit(update_size) - update_position;
-                        let update_size_left = trimmed_update_vector
-                            .x
-                            .min(trimmed_update_vector.y)
-                            .min(trimmed_update_vector.z);
-                        (
-                            update_position,
-                            update_size_within(&target_bounds, &update_position, update_size_left),
-                        )
-                    };
-
-                    fun(
-                        position_in_target,
-                        update_size_in_target,
-                        target_child_sectant,
-                        &target_bounds,
-                    );
-                }
-            }
-        }
-        (target_size * children_updated_dimension as f32) as usize
     }
 
     //####################################################################################
@@ -690,21 +613,28 @@ impl<
         brick_bounds: &Cube,
         brick_dim: u32,
         position: V3c<u32>,
-        size: u32,
+        size: V3c<u32>,
         data: &PaletteIndexValues,
-    ) -> usize {
+    ) {
         debug_assert!(
             brick_bounds.contains(&(position.into())),
             "Expected position {:?} to be contained in brick bounds {:?}",
             position,
             brick_bounds
         );
+        debug_assert!(
+            brick_bounds.contains(&V3c::from(position + size - V3c::unit(1))),
+            "Expected position {:?} and update_size {:?} to be contained in brick bounds {:?}",
+            position,
+            size,
+            brick_bounds
+        );
 
         let mat_index = matrix_index_for(brick_bounds, &position, brick_dim);
-        let update_size = (brick_dim as usize - mat_index.x).min(size as usize);
-        for x in mat_index.x..(mat_index.x + size as usize).min(brick_dim as usize) {
-            for y in mat_index.y..(mat_index.y + size as usize).min(brick_dim as usize) {
-                for z in mat_index.z..(mat_index.z + size as usize).min(brick_dim as usize) {
+
+        for x in mat_index.x..(mat_index.x + size.x as usize).min(brick_dim as usize) {
+            for y in mat_index.y..(mat_index.y + size.y as usize).min(brick_dim as usize) {
+                for z in mat_index.z..(mat_index.z + size.z as usize).min(brick_dim as usize) {
                     let mat_index = flat_projection(x, y, z, brick_dim as usize);
                     if overwrite_if_empty {
                         brick[mat_index] = *data;
@@ -721,7 +651,6 @@ impl<
                 }
             }
         }
-        update_size
     }
 
     //####################################################################################

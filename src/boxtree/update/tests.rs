@@ -1309,6 +1309,28 @@ fn test_clear_at_lod_where_dim_is_1() {
         .ok()
         .unwrap();
 
+    let mut hits = 0;
+    for x in 0..4 {
+        for y in 0..4 {
+            for z in 0..4 {
+                let hit = tree.get(&V3c::new(x, y, z));
+                if hit != BoxTreeEntry::Empty {
+                    assert!(
+                        hit == (&albedo).into(),
+                        "Hit mismatch at {:?}: {:?} <> {:?}",
+                        (x, y, z),
+                        hit,
+                        albedo
+                    );
+                    hits += 1;
+                }
+            }
+        }
+    }
+
+    // number of hits should be the number of nodes set
+    assert_eq!(hits, 64);
+
     // This will clear an area equal to 8 1-sized nodes
     tree.clear_at_lod(&V3c::new(0, 0, 0), 2).ok().unwrap();
 
@@ -1496,10 +1518,7 @@ fn test_clear_at_lod_with_unaligned_position_where_dim_is_4() {
     }
 
     // number of hits should be the number of nodes set minus the number of nodes cleared
-    // Note: Only at most one brick is updated with each update call
-    // --> In this case the relevant brick is updated from 1,1,1 ---> 3,3,3 ( inclusive )
-    // So 3^3 voxels are cleared == 27
-    assert_eq!(hits, (512 - 27));
+    assert_eq!(hits, (512 - 64));
 }
 
 #[test]

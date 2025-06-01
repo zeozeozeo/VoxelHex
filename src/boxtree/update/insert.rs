@@ -1,8 +1,8 @@
 use crate::{
     boxtree::{
-        detail::child_sectant_for,
+        iterate::execute_for_relevant_sectants,
         types::{BoxTreeEntry, BrickData, NodeChildren, NodeContent, OctreeError},
-        BoxTree, VoxelData, BOX_NODE_DIMENSION,
+        BoxTree, VoxelData,
     },
     spatial::{
         math::{flat_projection, matrix_index_for, vector::V3c},
@@ -122,12 +122,13 @@ impl<
 
         // A CPU stack does not consume significant relevant resources, e.g. a 4096*4096*4096 chunk has depth of 12
         let mut node_stack = vec![(Self::ROOT_NODE_KEY, root_bounds)];
-        let mut actual_update_size = 0;
+        let mut actual_update_size = V3c::unit(0);
+        let mut updated = false;
         let target_content = self.add_to_palette(&data);
         loop {
             let (current_node_key, current_bounds) = *node_stack.last().unwrap();
             let current_node_key = current_node_key as usize;
-            let target_child_sectant = child_sectant_for(&current_bounds, &position);
+            let target_child_sectant = current_bounds.sectant_for(&position);
             let target_bounds = current_bounds.child_bounds_for(target_child_sectant);
             let mut target_child_key =
                 self.node_children[current_node_key].child(target_child_sectant);
@@ -141,23 +142,26 @@ impl<
                 target_bounds
             );
 
+            // Trying to fill up the whole node
             if target_bounds.size > 1.
                 && insert_size > 1
                 && target_bounds.size <= insert_size as f32
                 && position <= target_bounds.min_position
             {
-                actual_update_size = Self::execute_for_relevant_sectants(
+                actual_update_size = execute_for_relevant_sectants(
                     &current_bounds,
                     position_u32,
                     insert_size,
-                    target_bounds.size,
                     |position_in_target,
                      update_size_in_target,
                      child_sectant,
                      child_target_bounds| {
                         if position_in_target == child_target_bounds.min_position.into()
-                            && update_size_in_target == child_target_bounds.size as u32
+                            && update_size_in_target.x == child_target_bounds.size as u32
+                            && update_size_in_target.y == child_target_bounds.size as u32
+                            && update_size_in_target.z == child_target_bounds.size as u32
                         {
+                            updated = true;
                             target_child_key =
                                 self.node_children[current_node_key].child(child_sectant);
 
@@ -178,7 +182,7 @@ impl<
                                 self.deallocate_children_of(target_child_key);
                                 *self.nodes.get_mut(target_child_key) =
                                     NodeContent::UniformLeaf(BrickData::Solid(target_content));
-                                self.node_children[target_child_key as usize] =
+                                self.node_children[target_child_key] =
                                     NodeChildren::OccupancyBitmap(u64::MAX);
                             } else {
                                 // Push in a new uniform leaf child
@@ -323,23 +327,22 @@ impl<
                     }
                 }
             } else {
-                actual_update_size = Self::execute_for_relevant_sectants(
+                actual_update_size = execute_for_relevant_sectants(
                     &current_bounds,
                     position_u32,
                     insert_size,
-                    target_bounds.size,
                     |position_in_target,
                      update_size_in_target,
                      child_sectant,
                      child_target_bounds| {
-                        self.leaf_update(
+                        updated |= self.leaf_update(
                             overwrite_if_empty,
                             current_node_key,
                             &current_bounds,
                             child_target_bounds,
                             child_sectant as usize,
                             &position_in_target,
-                            update_size_in_target,
+                            &update_size_in_target,
                             target_content,
                         );
                     },
@@ -347,6 +350,11 @@ impl<
 
                 break;
             }
+        }
+
+        if !updated {
+            // No need to do post-processing operations if data wasn't updated..
+            return Ok(());
         }
 
         // post-processing operations
@@ -363,14 +371,16 @@ impl<
 
             // Update Node occupied bits
             let mut new_occupied_bits = self.stored_occupied_bits(node_key as usize);
-            if node_bounds.size as usize == actual_update_size {
+            if node_bounds.size as usize == actual_update_size.x
+                && node_bounds.size as usize == actual_update_size.y
+                && node_bounds.size as usize == actual_update_size.z
+            {
                 new_occupied_bits = u64::MAX;
             } else {
-                Self::execute_for_relevant_sectants(
+                execute_for_relevant_sectants(
                     &node_bounds,
                     position_u32,
                     insert_size,
-                    node_bounds.size / BOX_NODE_DIMENSION as f32,
                     |_position_in_target,
                      _update_size_in_target,
                      child_sectant,

@@ -15,26 +15,6 @@ mod vector_tests {
 }
 
 #[cfg(test)]
-mod detail_tests {
-    use crate::boxtree::V3c;
-    use crate::spatial::{update_size_within, Cube};
-
-    #[test]
-    fn test_update_size() {
-        let bounds = Cube {
-            min_position: V3c::unit(5.),
-            size: 5.,
-        };
-        assert_eq!(update_size_within(&bounds, &V3c::new(5, 5, 5), 5), 5);
-        assert_eq!(update_size_within(&bounds, &V3c::new(5, 5, 6), 5), 4);
-        assert_eq!(update_size_within(&bounds, &V3c::new(8, 8, 8), 5), 2);
-        assert_eq!(update_size_within(&bounds, &V3c::new(8, 8, 8), 2), 2);
-        assert_eq!(update_size_within(&bounds, &V3c::new(6, 5, 6), 3), 3);
-        assert_eq!(update_size_within(&bounds, &V3c::new(5, 5, 5), 2), 2);
-    }
-}
-
-#[cfg(test)]
 mod sectant_tests {
     use crate::spatial::math::offset_sectant;
     use crate::spatial::V3c;

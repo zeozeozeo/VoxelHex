@@ -117,6 +117,13 @@ impl V3c<f32> {
         self.z = self.z.min(value);
         self
     }
+
+    pub fn cut_by(&mut self, value: V3c<f32>) -> Self {
+        self.x = self.x.min(value.x);
+        self.y = self.y.min(value.y);
+        self.z = self.z.min(value.z);
+        *self
+    }
 }
 
 impl V3c<i32> {

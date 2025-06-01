@@ -1,9 +1,9 @@
-pub mod types;
-pub mod update;
-
 mod detail;
+pub(crate) mod iterate;
 pub(crate) mod mipmap;
 mod node;
+pub mod types;
+pub mod update;
 
 #[cfg(test)]
 mod tests;
@@ -14,10 +14,7 @@ pub use types::{
 };
 
 use crate::{
-    boxtree::{
-        detail::child_sectant_for,
-        types::{BrickData, NodeChildren, NodeContent, OctreeError, PaletteIndexValues},
-    },
+    boxtree::types::{BrickData, NodeChildren, NodeContent, OctreeError, PaletteIndexValues},
     object_pool::{empty_marker, ObjectPool},
     spatial::{
         math::{flat_projection, matrix_index_for},
@@ -229,112 +226,6 @@ impl<
         )
     }
 
-    /// Internal Getter function for the boxtree, to be able to call get from within the tree itself
-    /// * Returns immutable reference to the data of the given node at the given position, if there is any
-    fn get_internal(
-        &self,
-        mut current_node_key: usize,
-        mut current_bounds: Cube,
-        position: &V3c<u32>,
-    ) -> PaletteIndexValues {
-        let position = V3c::from(*position);
-        if !current_bounds.contains(&position) {
-            return empty_marker();
-        }
-
-        loop {
-            match self.nodes.get(current_node_key) {
-                NodeContent::Nothing => return empty_marker(),
-                NodeContent::Leaf(bricks) => {
-                    // In case brick_dimension == boxtree size, the root node can not be a leaf...
-                    debug_assert!(self.brick_dim < self.boxtree_size);
-
-                    // Hash the position to the target child
-                    let child_sectant_at_position = child_sectant_for(&current_bounds, &position);
-
-                    // If the child exists, query it for the voxel
-                    match &bricks[child_sectant_at_position as usize] {
-                        BrickData::Empty => {
-                            return empty_marker();
-                        }
-                        BrickData::Parted(brick) => {
-                            current_bounds =
-                                Cube::child_bounds_for(&current_bounds, child_sectant_at_position);
-                            let mat_index = matrix_index_for(
-                                &current_bounds,
-                                &V3c::from(position),
-                                self.brick_dim,
-                            );
-                            let mat_index = flat_projection(
-                                mat_index.x as usize,
-                                mat_index.y as usize,
-                                mat_index.z as usize,
-                                self.brick_dim as usize,
-                            );
-                            if !NodeContent::pix_points_to_empty(
-                                &brick[mat_index],
-                                &self.voxel_color_palette,
-                                &self.voxel_data_palette,
-                            ) {
-                                return brick[mat_index];
-                            }
-                            return empty_marker();
-                        }
-                        BrickData::Solid(voxel) => {
-                            return *voxel;
-                        }
-                    }
-                }
-                NodeContent::UniformLeaf(brick) => match brick {
-                    BrickData::Empty => {
-                        return empty_marker();
-                    }
-                    BrickData::Parted(brick) => {
-                        let mat_index =
-                            matrix_index_for(&current_bounds, &V3c::from(position), self.brick_dim);
-                        let mat_index = flat_projection(
-                            mat_index.x as usize,
-                            mat_index.y as usize,
-                            mat_index.z as usize,
-                            self.brick_dim as usize,
-                        );
-                        return brick[mat_index];
-                    }
-                    BrickData::Solid(voxel) => {
-                        return *voxel;
-                    }
-                },
-                NodeContent::Internal(occupied_bits) => {
-                    // Hash the position to the target child
-                    let child_sectant_at_position = child_sectant_for(&current_bounds, &position);
-                    let child_at_position =
-                        self.node_children[current_node_key].child(child_sectant_at_position);
-
-                    // There is a valid child at the given position inside the node, recurse into it
-                    if self.nodes.key_is_valid(child_at_position as usize) {
-                        debug_assert_ne!(
-                            0,
-                            occupied_bits & (0x01 << child_sectant_at_position),
-                            "Node[{:?}] under {:?} \n has a child(node[{:?}]) in sectant[{:?}](global position: {:?}), which is incompatible with the occupancy bitmap: {:#10X}; \n child node: {:?}; child node children: {:?};",
-                            current_node_key,
-                            current_bounds,
-                            self.node_children[current_node_key].child(child_sectant_at_position),
-                            child_sectant_at_position,
-                            position, occupied_bits,
-                            self.nodes.get(self.node_children[current_node_key].child(child_sectant_at_position)),
-                            self.node_children[self.node_children[current_node_key].child(child_sectant_at_position)]
-                        );
-                        current_node_key = child_at_position as usize;
-                        current_bounds =
-                            Cube::child_bounds_for(&current_bounds, child_sectant_at_position);
-                    } else {
-                        return empty_marker();
-                    }
-                }
-            }
-        }
-    }
-
     /// Tells the radius of the area covered by the boxtree
     pub fn get_size(&self) -> u32 {
         self.boxtree_size
@@ -343,5 +234,79 @@ impl<
     /// Object to set the MIP map strategy for each MIP level inside the boxtree
     pub fn albedo_mip_map_resampling_strategy(&mut self) -> StrategyUpdater<T> {
         StrategyUpdater(self)
+    }
+
+    /// Internal Getter function for the boxtree, to be able to call get from within the tree itself
+    /// * Returns immutable reference to the data of the given node at the given position, if there is any
+    fn get_internal(
+        &self,
+        current_node_key: usize,
+        mut current_bounds: Cube,
+        position: &V3c<u32>,
+    ) -> PaletteIndexValues {
+        let position_ = V3c::from(*position);
+        if !current_bounds.contains(&position_) {
+            return empty_marker();
+        }
+
+        let Some(current_node_key) =
+            self.get_node_internal(current_node_key, &mut current_bounds, &position_)
+        else {
+            return empty_marker();
+        };
+
+        match self.nodes.get(current_node_key) {
+            NodeContent::Nothing => empty_marker(),
+            NodeContent::Leaf(bricks) => {
+                // In case brick_dimension == boxtree size, the root node can not be a leaf...
+                debug_assert!(self.brick_dim < self.boxtree_size);
+
+                // Hash the position to the target child
+                let child_sectant_at_position = current_bounds.sectant_for(&position_);
+
+                // If the child exists, query it for the voxel
+                match &bricks[child_sectant_at_position as usize] {
+                    BrickData::Empty => empty_marker(),
+                    BrickData::Parted(brick) => {
+                        current_bounds =
+                            Cube::child_bounds_for(&current_bounds, child_sectant_at_position);
+                        let mat_index = matrix_index_for(&current_bounds, position, self.brick_dim);
+                        let mat_index = flat_projection(
+                            mat_index.x as usize,
+                            mat_index.y as usize,
+                            mat_index.z as usize,
+                            self.brick_dim as usize,
+                        );
+                        if !NodeContent::pix_points_to_empty(
+                            &brick[mat_index],
+                            &self.voxel_color_palette,
+                            &self.voxel_data_palette,
+                        ) {
+                            return brick[mat_index];
+                        }
+                        empty_marker()
+                    }
+                    BrickData::Solid(voxel) => *voxel,
+                }
+            }
+            NodeContent::UniformLeaf(brick) => match brick {
+                BrickData::Empty => empty_marker(),
+                BrickData::Parted(brick) => {
+                    let mat_index = matrix_index_for(&current_bounds, position, self.brick_dim);
+                    let mat_index = flat_projection(
+                        mat_index.x as usize,
+                        mat_index.y as usize,
+                        mat_index.z as usize,
+                        self.brick_dim as usize,
+                    );
+                    brick[mat_index]
+                }
+                BrickData::Solid(voxel) => *voxel,
+            },
+            NodeContent::Internal(_occupied_bits) => {
+                // Deepest child at given position is empty
+                empty_marker()
+            }
+        }
     }
 }

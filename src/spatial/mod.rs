@@ -9,28 +9,9 @@ pub mod raytracing;
 mod tests;
 
 use crate::{
-    boxtree::BOX_NODE_DIMENSION, spatial::lut::SECTANT_OFFSET_LUT, spatial::math::vector::V3c,
+    boxtree::BOX_NODE_DIMENSION, spatial::lut::SECTANT_OFFSET_LUT, spatial::math::offset_sectant,
+    spatial::math::vector::V3c,
 };
-
-/// Provides update scope within the given bounds
-/// * `bounds` - The confines of the update
-/// * `position` - the starting position of the update
-/// * `update_size` - the size of the update, guaranteed to be at least 1
-pub(crate) fn update_size_within(bounds: &Cube, position: &V3c<u32>, update_size: u32) -> u32 {
-    debug_assert!(
-        bounds.contains(&((*position).into())),
-        "Expected position {:?} to be inside bounds {:?}",
-        position,
-        bounds
-    );
-    let update_scope_within = bounds.min_position + V3c::unit(bounds.size) - V3c::from(*position);
-    (update_scope_within
-        .x
-        .min(update_scope_within.y)
-        .min(update_scope_within.z) as u32)
-        .min(update_size)
-        .max(1)
-}
 
 #[derive(Default, Clone, Copy, Debug)]
 #[cfg_attr(
@@ -51,6 +32,7 @@ impl Cube {
         }
     }
 
+    /// True if the given position is within the boundaries of the object
     pub(crate) fn contains(&self, position: &V3c<f32>) -> bool {
         position.x >= self.min_position.x
             && position.y >= self.min_position.y
@@ -58,6 +40,16 @@ impl Cube {
             && position.x < (self.min_position.x + self.size)
             && position.y < (self.min_position.y + self.size)
             && position.z < (self.min_position.z + self.size)
+    }
+
+    pub(crate) fn sectant_for(&self, position: &V3c<f32>) -> u8 {
+        debug_assert!(
+            self.contains(position),
+            "Position {:?}, out of {:?}",
+            position,
+            self
+        );
+        offset_sectant(&(*position - self.min_position), self.size)
     }
 
     /// Creates a bounding box within an area described by the min_position and size, for the given sectant
