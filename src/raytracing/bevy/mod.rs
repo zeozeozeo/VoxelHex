@@ -8,18 +8,19 @@ pub use crate::raytracing::bevy::types::{
     BoxTreeGPUHost, BoxTreeGPUView, BoxTreeSpyGlass, RenderBevyPlugin, VhxViewSet, Viewport,
 };
 use crate::{
-    boxtree::{Albedo, V3cf32, VoxelData},
+    boxtree::{Albedo, V3c, V3cf32, VoxelData},
     raytracing::bevy::{
-        data::{handle_gpu_readback, write_to_gpu},
+        data::{handle_upload_queue_changes, rebuild_upload_queues},
         pipeline::prepare_bind_groups,
         types::{VhxLabel, VhxRenderNode, VhxRenderPipeline},
     },
+    spatial::Cube,
 };
 use bendy::{decoding::FromBencode, encoding::ToBencode};
 use bevy::{
     app::{App, Plugin},
     ecs::prelude::IntoScheduleConfigs,
-    prelude::{Assets, Commands, ExtractSchedule, Handle, Image, Res, ResMut, Update, Vec4},
+    prelude::{Assets, Commands, ExtractSchedule, FixedUpdate, Handle, Image, Res, ResMut, Vec4},
     render::{
         extract_resource::ExtractResourcePlugin,
         render_asset::RenderAssetUsages,
@@ -67,17 +68,11 @@ impl VhxViewSet {
         Self {
             changed: true,
             views: vec![],
-            resources: vec![],
         }
     }
 
     /// Returns the number of views
     pub fn len(&self) -> usize {
-        debug_assert_eq!(
-            self.views.len(),
-            self.resources.len(),
-            "Expected views and their resources to match in count"
-        );
         self.views.len()
     }
 
@@ -139,7 +134,6 @@ impl VhxViewSet {
     /// Empties the viewset erasing all contained views
     pub fn clear(&mut self) {
         self.views.clear();
-        self.resources.clear();
         self.changed = true;
     }
 }
@@ -147,6 +141,7 @@ impl VhxViewSet {
 impl BoxTreeGPUView {
     /// Erases the whole view to be uploaded to the GPU again
     pub fn reload(&mut self) {
+        self.data_handler.upload_targets.reset();
         self.reload = true;
     }
 
@@ -202,10 +197,28 @@ impl Viewport {
     pub fn new(origin: V3cf32, direction: V3cf32, frustum: V3cf32, fov: f32) -> Self {
         Self {
             origin,
+            origin_delta: V3c::unit(0.),
             direction,
             frustum,
             fov,
         }
+    }
+
+    /// Provides the point the viewport originates rays from. All rays point away from this point.
+    pub const fn origin(&self) -> V3cf32 {
+        self.origin
+    }
+
+    /// Moves the viewports origin with the given delta position
+    pub fn move_viewport(&mut self, delta: V3cf32) {
+        self.origin_delta += delta;
+        self.origin += delta;
+    }
+
+    /// Sets the VIewports origin to the given position
+    pub fn set_viewport_origin(&mut self, new_origin: V3cf32) {
+        self.origin_delta += self.origin - new_origin;
+        self.origin = new_origin;
     }
 }
 
@@ -352,6 +365,68 @@ pub(crate) fn sync_from_main_world(
     }
 }
 
+fn handle_viewport_position_updates<
+    #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
+        + ToBencode
+        + Serialize
+        + DeserializeOwned
+        + Default
+        + Eq
+        + Clone
+        + Hash
+        + VoxelData
+        + Send
+        + Sync
+        + 'static,
+    #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+>(
+    mut tree_gpu_host: Option<Res<BoxTreeGPUHost<T>>>,
+    mut viewset: Option<ResMut<VhxViewSet>>,
+) {
+    if let (Some(tree_host), Some(viewset)) = (tree_gpu_host.as_mut(), viewset.as_mut()) {
+        if viewset.is_empty() {
+            return; // Nothing to do without views..
+        }
+        let Some(mut view) = viewset.view_mut(0) else {
+            return;
+        };
+
+        // There have been movement lately
+        if view.spyglass.viewport.origin_delta != V3c::unit(0.) {
+            // Check if the new origin fits into the brick slot
+            debug_assert!(
+                view.brick_slot.contains(
+                    &(view.spyglass.viewport.origin - view.spyglass.viewport.origin_delta)
+                ),
+                "Expected old vierwport position to be inside old brick slot"
+            );
+
+            if !view.brick_slot.contains(&view.spyglass.viewport.origin) {
+                view.data_handler.upload_range = Cube {
+                    min_position: view.spyglass.viewport.origin.clone()
+                        - V3c::unit(view.spyglass.viewport.frustum.z / 2.),
+                    size: view.spyglass.viewport.frustum.z,
+                };
+                rebuild_upload_queues::<T>(
+                    &tree_host.tree,
+                    &view.spyglass.viewport.origin.clone(),
+                    view.spyglass.viewport.frustum.z,
+                    &mut view.data_handler.upload_targets,
+                );
+
+                view.data_handler.upload_state.brick_upload_progress = 0;
+                view.data_handler.upload_state.node_upload_progress = 0;
+                view.brick_slot =
+                    Cube::brick_slot_for(&view.spyglass.viewport.origin, tree_host.tree.brick_dim);
+            }
+
+            view.spyglass.viewport.origin_delta = V3c::unit(0.);
+        }
+    }
+}
+
 impl<
         #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
             + ToBencode
@@ -381,15 +456,21 @@ impl<
 {
     fn build(&self, app: &mut App) {
         app.add_plugins((ExtractResourcePlugin::<BoxTreeGPUHost<T>>::default(),));
-        app.add_systems(Update, handle_resolution_updates_main_world);
+        app.add_systems(
+            FixedUpdate,
+            (
+                handle_resolution_updates_main_world,
+                handle_viewport_position_updates::<T>,
+                handle_upload_queue_changes::<T>,
+            ),
+        );
         let render_app = app.sub_app_mut(RenderApp);
         render_app.add_systems(ExtractSchedule, sync_from_main_world);
         render_app.add_systems(
             Render,
             (
-                write_to_gpu::<T>.in_set(RenderSet::PrepareAssets),
+                handle_upload_queue_changes::<T>.in_set(RenderSet::PrepareAssets),
                 prepare_bind_groups.in_set(RenderSet::PrepareBindGroups),
-                handle_gpu_readback.in_set(RenderSet::Cleanup),
                 handle_resolution_updates_render_world,
             ),
         );

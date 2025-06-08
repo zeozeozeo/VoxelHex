@@ -151,6 +151,16 @@ impl<
         #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData,
     > BoxTree<T>
 {
+    /// Provides the child key if there is a valid child under the given sectant
+    pub(crate) fn valid_child_for(&self, node_key: usize, sectant: u8) -> Option<usize> {
+        let child_key = self.node_children[node_key].child(sectant);
+        if self.nodes.key_is_valid(child_key) {
+            Some(child_key)
+        } else {
+            None
+        }
+    }
+
     /// Returns with true if Node is empty at the given target sectant
     pub(crate) fn node_empty_at(&self, node_key: usize, target_sectant: u8) -> bool {
         match self.nodes.get(node_key) {

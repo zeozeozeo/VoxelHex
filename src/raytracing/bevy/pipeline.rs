@@ -19,8 +19,7 @@ use bevy::{
         render_graph::{self},
         render_resource::{
             encase::{StorageBuffer, UniformBuffer},
-            BufferDescriptor, BufferUsages, CachedPipelineState, ComputePassDescriptor,
-            ComputePipelineDescriptor, PipelineCache,
+            CachedPipelineState, ComputePassDescriptor, ComputePipelineDescriptor, PipelineCache,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -104,44 +103,32 @@ impl render_graph::Node for VhxRenderNode {
             if viewset.is_empty() {
                 return Ok(()); // Nothing to do without views..
             }
-            let current_view = viewset.view(0).unwrap();
-            let resources = viewset.resources[0].as_ref();
+            let view = viewset.view(0).unwrap();
 
-            if self.ready && resources.is_some() {
-                let resources = resources.unwrap();
+            if self.ready && view.resources.is_some() {
+                let resources = view.resources.as_ref().unwrap();
                 let pipeline_cache = world.resource::<PipelineCache>();
                 let command_encoder = render_context.command_encoder();
-                let data_handler = &current_view.data_handler;
 
-                if !current_view.data_ready {
-                    // The first byte of metadata is used to monitor if the GPU has init data uploaded.
-                    // Until state is set on host, just copy data to the readable buffer.
-                    command_encoder.copy_buffer_to_buffer(
-                        &resources.node_metadata_buffer,
-                        0,
-                        &resources.readable_used_bits_buffer,
-                        0,
-                        (std::mem::size_of_val(&data_handler.render_data.node_metadata[0])) as u64,
+                {
+                    let mut prepass =
+                        command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
+
+                    prepass.set_bind_group(0, &resources.render_stage_prepass_bind_group, &[]);
+                    prepass.set_bind_group(1, &resources.spyglass_bind_group, &[]);
+                    prepass.set_bind_group(2, &resources.tree_bind_group, &[]);
+                    let pipeline = pipeline_cache
+                        .get_compute_pipeline(vhx_pipeline.update_pipeline)
+                        .unwrap();
+                    prepass.set_pipeline(pipeline);
+                    prepass.dispatch_workgroups(
+                        (view.resolution[0] / 2) / WORKGROUP_SIZE,
+                        (view.resolution[1] / 2) / WORKGROUP_SIZE,
+                        1,
                     );
-                } else {
-                    {
-                        let mut prepass =
-                            command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
+                }
 
-                        prepass.set_bind_group(0, &resources.render_stage_prepass_bind_group, &[]);
-                        prepass.set_bind_group(1, &resources.spyglass_bind_group, &[]);
-                        prepass.set_bind_group(2, &resources.tree_bind_group, &[]);
-                        let pipeline = pipeline_cache
-                            .get_compute_pipeline(vhx_pipeline.update_pipeline)
-                            .unwrap();
-                        prepass.set_pipeline(pipeline);
-                        prepass.dispatch_workgroups(
-                            (current_view.resolution[0] / 2) / WORKGROUP_SIZE,
-                            (current_view.resolution[1] / 2) / WORKGROUP_SIZE,
-                            1,
-                        );
-                    }
-
+                {
                     let mut main_pass =
                         command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
 
@@ -153,33 +140,11 @@ impl render_graph::Node for VhxRenderNode {
                         .unwrap();
                     main_pass.set_pipeline(pipeline);
                     main_pass.dispatch_workgroups(
-                        current_view.resolution[0] / WORKGROUP_SIZE,
-                        current_view.resolution[1] / WORKGROUP_SIZE,
+                        view.resolution[0] / WORKGROUP_SIZE,
+                        view.resolution[1] / WORKGROUP_SIZE,
                         1,
                     );
                 }
-
-                command_encoder.copy_buffer_to_buffer(
-                    &resources.used_bits_buffer,
-                    0,
-                    &resources.readable_used_bits_buffer,
-                    0,
-                    (std::mem::size_of_val(&data_handler.render_data.used_bits[0])
-                        * data_handler.render_data.used_bits.len()) as u64,
-                );
-
-                debug_assert!(
-                    !current_view.spyglass.node_requests.is_empty(),
-                    "Expected node requests array to not be empty"
-                );
-                command_encoder.copy_buffer_to_buffer(
-                    &resources.node_requests_buffer,
-                    0,
-                    &resources.readable_node_requests_buffer,
-                    0,
-                    (std::mem::size_of_val(&current_view.spyglass.node_requests[0])
-                        * current_view.spyglass.node_requests.len()) as u64,
-                );
             }
         }
         Ok(())
@@ -211,17 +176,7 @@ fn create_view_resources(
     gpu_images: Res<RenderAssets<GpuImage>>,
     tree_view: &BoxTreeGPUView,
 ) -> BoxTreeRenderDataResources {
-    let render_data = &tree_view.data_handler.render_data;
-
-    // Create the staging buffer helping in reading data from the GPU
-    let readable_used_bits_buffer = render_device.create_buffer(&BufferDescriptor {
-        mapped_at_creation: false,
-        size: (render_data.used_bits.len() * 4) as u64,
-        label: Some("BoxTree Node metadata staging Buffer"),
-        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-    });
-
-    let (spyglass_bind_group, viewport_buffer, node_requests_buffer, readable_node_requests_buffer) =
+    let (spyglass_bind_group, viewport_buffer) =
         create_spyglass_bind_group(pipeline, &render_device, tree_view);
 
     let (render_stage_prepass_bind_group, render_stage_main_bind_group) =
@@ -230,7 +185,6 @@ fn create_view_resources(
     let (
         tree_bind_group,
         boxtree_meta_buffer,
-        used_bits_buffer,
         node_metadata_buffer,
         node_children_buffer,
         node_mips_buffer,
@@ -244,18 +198,14 @@ fn create_view_resources(
         render_stage_main_bind_group,
         spyglass_bind_group,
         viewport_buffer,
-        node_requests_buffer,
-        readable_node_requests_buffer,
         tree_bind_group,
         boxtree_meta_buffer,
-        used_bits_buffer,
         node_metadata_buffer,
         node_children_buffer,
         node_mips_buffer,
         node_ocbits_buffer,
         voxels_buffer,
         color_palette_buffer,
-        readable_used_bits_buffer,
     }
 }
 
@@ -293,77 +243,44 @@ pub(crate) fn prepare_bind_groups(
     mut viewset: Option<ResMut<VhxViewSet>>,
 ) {
     if let (Some(pipeline), Some(viewset)) = (pipeline.as_mut(), viewset.as_mut()) {
-        if viewset.is_empty() {
+        let Some(mut view) = viewset.view_mut(0) else {
             return; // Nothing to do without views..
-        }
-
-        let (should_rebuild, should_refresh) = {
-            let view = viewset.view(0).unwrap();
-            (
-                ((view.rebuild || viewset.resources[0].is_none()) && view.new_images_ready),
-                (view.rebuild && viewset.resources[0].is_some() && view.new_images_ready),
-            )
         };
 
-        if !should_rebuild && !should_refresh {
-            return;
-        }
-
         // Refresh view because of texture updates
-        if should_refresh {
-            let (
-                spyglass_bind_group,
-                viewport_buffer,
-                node_requests_buffer,
-                readable_node_requests_buffer,
-            ) = create_spyglass_bind_group(
-                pipeline,
-                &render_device,
-                &viewset.views[0].write().unwrap(),
-            );
+        if view.rebuild && view.resources.is_some() && view.new_images_ready {
+            let (spyglass_bind_group, viewport_buffer) =
+                create_spyglass_bind_group(pipeline, &render_device, &view);
 
             // Update View resources
             let (render_stage_prepass_bind_group, render_stage_main_bind_group) =
-                create_stage_bind_groups(
-                    &gpu_images,
-                    pipeline,
-                    &render_device,
-                    &viewset.views[0].write().unwrap(),
-                );
+                create_stage_bind_groups(&gpu_images, pipeline, &render_device, &view);
 
-            let view_resources = viewset.resources[0].as_mut().unwrap();
+            let view_resources = view.resources.as_mut().unwrap();
             view_resources.render_stage_prepass_bind_group = render_stage_prepass_bind_group;
             view_resources.render_stage_main_bind_group = render_stage_main_bind_group;
             view_resources.spyglass_bind_group = spyglass_bind_group;
             view_resources.viewport_buffer = viewport_buffer;
-            view_resources.node_requests_buffer = node_requests_buffer;
-            view_resources.readable_node_requests_buffer = readable_node_requests_buffer;
 
             // Update view to clear temporary objects
-            let mut view = viewset.views[0].write().unwrap();
             view.new_output_texture = None;
             view.new_depth_texture = None;
             view.rebuild = false;
             return;
         }
 
+        if !view.new_images_ready || (!view.rebuild && view.resources.is_some()) {
+            return; // Can't or won't rebuild the pipeline
+        }
+
         // build everything from the ground up
-        if let Some(resources) = &viewset.resources[0] {
-            let tree_view = &viewset.views[0].write().unwrap();
-            let render_data = &tree_view.data_handler.render_data;
+        if let Some(resources) = view.resources.as_ref() {
+            let render_data = &view.data_handler.render_data;
 
             let mut buffer = UniformBuffer::new(Vec::<u8>::new());
             buffer.write(&render_data.boxtree_meta).unwrap();
             pipeline.render_queue.write_buffer(
                 &resources.boxtree_meta_buffer,
-                0,
-                &buffer.into_inner(),
-            );
-
-            let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-            buffer.write(&render_data.used_bits).unwrap();
-            pipeline.render_queue.write_buffer(
-                &resources.used_bits_buffer,
                 0,
                 &buffer.into_inner(),
             );
@@ -408,15 +325,10 @@ pub(crate) fn prepare_bind_groups(
                 &buffer.into_inner(),
             )
         } else {
-            let view_resources = create_view_resources(
-                pipeline,
-                render_device,
-                gpu_images,
-                &viewset.views[0].read().unwrap(),
-            );
-            viewset.resources[0] = Some(view_resources);
+            let view_resources = create_view_resources(pipeline, render_device, gpu_images, &view);
+            view.resources = Some(view_resources);
         }
 
-        viewset.views[0].write().unwrap().rebuild = false;
+        view.rebuild = false;
     }
 }

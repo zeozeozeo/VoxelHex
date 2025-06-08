@@ -102,7 +102,6 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
     let mut views = VhxViewSet::new();
     let view_index = host.create_new_view(
         &mut views,
-        42,
         Viewport::new(
             V3c {
                 x: 0.,
@@ -170,7 +169,10 @@ fn set_viewport_for_camera(
         let Some(mut tree_view) = view_set.view_mut(0) else {
             return; // Nothing to do without views!
         };
-        tree_view.spyglass.viewport_mut().origin = V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
+        tree_view
+            .spyglass
+            .viewport_mut()
+            .set_viewport_origin(V3c::new(cam.focus.x, cam.focus.y, cam.focus.z));
         tree_view.spyglass.viewport_mut().direction = direction_from_cam(cam).unwrap();
     }
 }
@@ -195,7 +197,7 @@ fn handle_zoom(
         let pixel_width = tree_view.spyglass.view_frustum().x as f32 / DISPLAY_RESOLUTION[0] as f32;
         let pixel_height =
             tree_view.spyglass.view_frustum().y as f32 / DISPLAY_RESOLUTION[1] as f32;
-        let viewport_bottom_left = tree_view.spyglass.viewport().origin
+        let viewport_bottom_left = tree_view.spyglass.viewport().origin()
             + (tree_view.spyglass.viewport().direction * tree_view.spyglass.view_frustum().z)
             - (viewport_up_direction * (tree_view.spyglass.view_frustum().y / 2.))
             - (viewport_right_direction * (tree_view.spyglass.view_frustum().x / 2.));
@@ -212,8 +214,8 @@ fn handle_zoom(
                     + viewport_right_direction * x as f32 * pixel_width
                     + viewport_up_direction * y as f32 * pixel_height;
                 let ray = Ray {
-                    origin: tree_view.spyglass.viewport().origin,
-                    direction: (glass_point - tree_view.spyglass.viewport().origin).normalized(),
+                    origin: tree_view.spyglass.viewport().origin(),
+                    direction: (glass_point - tree_view.spyglass.viewport().origin()).normalized(),
                 };
 
                 use std::io::Write;

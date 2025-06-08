@@ -1,17 +1,20 @@
 use crate::{
     boxtree::{
-        types::{BrickData, NodeContent, PaletteIndexValues},
-        BoxTree, V3c, VoxelData, BOX_NODE_CHILDREN_COUNT, OOB_SECTANT,
+        iterate::execute_for_relevant_sectants,
+        types::{BrickData, NodeContent},
+        BoxTree, V3c, V3cf32, VoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
     object_pool::empty_marker,
     raytracing::bevy::{
         create_depth_texture, create_output_texture,
         types::{
             BoxTreeGPUDataHandler, BoxTreeGPUHost, BoxTreeGPUView, BoxTreeMetaData,
-            BoxTreeRenderData, BoxTreeSpyGlass, BrickUpdate, VhxRenderPipeline, VhxViewSet,
-            VictimPointer, Viewport,
+            BoxTreeRenderData, BoxTreeSpyGlass, BrickOwnedBy, BrickUploadRequest,
+            NodeUploadRequest, UploadQueueStatus, UploadQueueTargets, VhxRenderPipeline,
+            VhxViewSet, VictimPointer, Viewport,
         },
     },
+    spatial::Cube,
 };
 use bendy::{decoding::FromBencode, encoding::ToBencode};
 use bevy::{
@@ -20,7 +23,7 @@ use bevy::{
     prelude::{Assets, Image},
     render::{
         render_resource::{
-            encase::{internal::WriteInto, StorageBuffer, UniformBuffer},
+            encase::{internal::WriteInto, UniformBuffer},
             Buffer, ShaderSize,
         },
         renderer::{RenderDevice, RenderQueue},
@@ -28,7 +31,7 @@ use bevy::{
 };
 use bimap::BiHashMap;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     hash::Hash,
     ops::Range,
     sync::{Arc, RwLock},
@@ -110,12 +113,29 @@ impl<
     pub fn create_new_view(
         &mut self,
         viewset: &mut VhxViewSet,
-        nodes_in_view: usize,
         viewport: Viewport,
         resolution: [u32; 2],
         mut images: ResMut<Assets<Image>>,
     ) -> usize {
+        let tree = &self.tree;
+        let nodes_in_view: usize = {
+            let tree_max_levels = (tree.boxtree_size as f32 / tree.brick_dim as f32)
+                .log(4.)
+                .ceil() as u32;
+            (1..=tree_max_levels)
+                .map(|level| {
+                    let view_distance = viewport.frustum.z;
+                    let cube_size_at_level = tree.brick_dim * 4_u32.pow(level);
+                    (view_distance / cube_size_at_level as f32).ceil().powf(3.) as usize
+                })
+                .sum()
+        };
+
         let gpu_data_handler = BoxTreeGPUDataHandler {
+            upload_range: Cube {
+                min_position: viewport.origin - V3c::unit(viewport.frustum.z / 2.),
+                size: viewport.frustum.z,
+            },
             render_data: BoxTreeRenderData {
                 mips_enabled: self.tree.mip_map_strategy.is_enabled(),
                 boxtree_meta: BoxTreeMetaData {
@@ -128,45 +148,655 @@ impl<
                         self.tree.boxtree_size as f32,
                     ),
                 },
-                used_bits: vec![0; nodes_in_view],
                 node_metadata: vec![0; (nodes_in_view as f32 / 8.).ceil() as usize],
                 node_ocbits: vec![0; nodes_in_view * 2],
                 node_children: vec![empty_marker(); nodes_in_view * BOX_NODE_CHILDREN_COUNT],
                 node_mips: vec![empty_marker(); nodes_in_view],
                 color_palette: vec![Vec4::ZERO; u16::MAX as usize],
             },
-            victim_node: VictimPointer::new(nodes_in_view),
-            victim_brick: 0,
-            node_key_vs_meta_index: BiHashMap::new(),
-            brick_ownership: BiHashMap::new(),
-            uploaded_color_palette_size: 0,
+            upload_targets: UploadQueueTargets {
+                node_upload_queue: vec![],
+                brick_upload_queue: vec![],
+                brick_ownership: BiHashMap::new(),
+                brick_positions: vec![
+                    V3c::unit(0.);
+                    ((viewport.frustum.z / tree.brick_dim as f32).ceil() as usize)
+                        .pow(3)
+                        + nodes_in_view
+                ],
+                node_key_vs_meta_index: BiHashMap::new(),
+                nodes_to_see: HashSet::new(),
+            },
+            upload_state: UploadQueueStatus {
+                victim_node: VictimPointer::new(nodes_in_view),
+                victim_brick: 0,
+                node_upload_progress: 0,
+                brick_upload_progress: 0,
+                uploaded_color_palette_size: 0,
+            },
+            node_uploads_per_frame: 4,
+            brick_uploads_per_frame: 4,
+            brick_unload_search_perimeter: 8,
         };
         let output_texture = create_output_texture(resolution, &mut images);
 
         viewset.views.push(Arc::new(RwLock::new(BoxTreeGPUView {
             resolution,
-            reload: false,
+            reload: true,
             rebuild: false,
-            init_data_sent: false,
-            data_ready: false,
             new_images_ready: true,
             new_resolution: None,
             new_output_texture: None,
             new_depth_texture: None,
             data_handler: gpu_data_handler,
+            resources: None,
+            brick_slot: Cube::brick_slot_for(&viewport.origin, tree.brick_dim),
             spyglass: BoxTreeSpyGlass {
                 depth_texture: create_depth_texture(resolution, &mut images),
                 output_texture,
                 viewport_changed: true,
-                node_requests: vec![empty_marker(); 4],
                 viewport,
             },
         })));
-        viewset.resources.push(None);
         viewset.changed = true;
-
-        debug_assert_eq!(viewset.resources.len(), viewset.views.len());
         viewset.views.len() - 1
+    }
+}
+
+//##############################################################################
+//  █████  █████ ███████████  █████          ███████      █████████   ██████████
+// ░░███  ░░███ ░░███░░░░░███░░███         ███░░░░░███   ███░░░░░███ ░░███░░░░███
+//  ░███   ░███  ░███    ░███ ░███        ███     ░░███ ░███    ░███  ░███   ░░███
+//  ░███   ░███  ░██████████  ░███       ░███      ░███ ░███████████  ░███    ░███
+//  ░███   ░███  ░███░░░░░░   ░███       ░███      ░███ ░███░░░░░███  ░███    ░███
+//  ░███   ░███  ░███         ░███      █░░███     ███  ░███    ░███  ░███    ███
+//  ░░████████   █████        ███████████ ░░░███████░   █████   █████ ██████████
+//   ░░░░░░░░   ░░░░░        ░░░░░░░░░░░    ░░░░░░░    ░░░░░   ░░░░░ ░░░░░░░░░░
+//   █████████    █████████  █████   █████ ██████████ ██████████   █████  █████ █████       ██████████
+//  ███░░░░░███  ███░░░░░███░░███   ░░███ ░░███░░░░░█░░███░░░░███ ░░███  ░░███ ░░███       ░░███░░░░░█
+// ░███    ░░░  ███     ░░░  ░███    ░███  ░███  █ ░  ░███   ░░███ ░███   ░███  ░███        ░███  █ ░
+// ░░█████████ ░███          ░███████████  ░██████    ░███    ░███ ░███   ░███  ░███        ░██████
+//  ░░░░░░░░███░███          ░███░░░░░███  ░███░░█    ░███    ░███ ░███   ░███  ░███        ░███░░█
+//  ███    ░███░░███     ███ ░███    ░███  ░███ ░   █ ░███    ███  ░███   ░███  ░███      █ ░███ ░   █
+// ░░█████████  ░░█████████  █████   █████ ██████████ ██████████   ░░████████   ███████████ ██████████
+//  ░░░░░░░░░    ░░░░░░░░░  ░░░░░   ░░░░░ ░░░░░░░░░░ ░░░░░░░░░░     ░░░░░░░░   ░░░░░░░░░░░ ░░░░░░░░░░
+//##############################################################################
+impl UploadQueueTargets {
+    pub(crate) fn reset(&mut self) {
+        self.node_upload_queue.clear();
+        self.brick_upload_queue.clear();
+        self.brick_ownership.clear();
+        self.node_key_vs_meta_index.clear();
+        self.nodes_to_see.clear();
+    }
+}
+
+pub(crate) fn handle_upload_queue_changes<
+    #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
+        + ToBencode
+        + Serialize
+        + DeserializeOwned
+        + Default
+        + Eq
+        + Clone
+        + Hash
+        + VoxelData
+        + Send
+        + Sync
+        + 'static,
+    #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+>(
+    tree_gpu_host: Option<Res<BoxTreeGPUHost<T>>>,
+    mut vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
+    mut viewset: Option<ResMut<VhxViewSet>>,
+) {
+    if let (Some(pipeline), Some(tree_host), Some(viewset)) = (
+        vhx_pipeline.as_mut(),
+        tree_gpu_host.as_ref(),
+        viewset.as_mut(),
+    ) {
+        if viewset.is_empty() {
+            return; // Nothing to do without views..
+        }
+
+        let mut view = viewset.view_mut(0).unwrap();
+        let mut updates = vec![];
+        let mut ocbits_updated = 0..0;
+
+        'uploading_buffers: {
+            // Decide upload targets
+            if view.reload {
+                rebuild_upload_queues::<T>(
+                    &tree_host.tree,
+                    &view.spyglass.viewport.origin.clone(),
+                    view.spyglass.viewport.frustum.z,
+                    &mut view.data_handler.upload_targets,
+                );
+                view.data_handler.upload_state.node_upload_progress = 0;
+                view.data_handler.upload_state.brick_upload_progress = 0;
+                view.reload = false;
+            }
+
+            // Upload targets if view is ready
+            if !view.reload {
+                let data_handler = &mut view.data_handler;
+
+                debug_assert!(
+                    data_handler.upload_state.node_upload_progress
+                        <= data_handler.upload_targets.node_upload_queue.len()
+                );
+
+                // Handle node uploads
+                for _ in 0..data_handler.node_uploads_per_frame.min(
+                    data_handler.upload_targets.node_upload_queue.len()
+                        - data_handler.upload_state.node_upload_progress,
+                ) {
+                    // find first node to upload
+                    while data_handler.upload_state.node_upload_progress
+                        < data_handler.upload_targets.node_upload_queue.len()
+                    {
+                        let node_upload_request = data_handler.upload_targets.node_upload_queue
+                            [data_handler.upload_state.node_upload_progress]
+                            .clone();
+                        if data_handler
+                            .upload_targets
+                            .node_key_vs_meta_index
+                            .get_by_left(&node_upload_request.node_key)
+                            .is_some()
+                        {
+                            // Skip to next node if the current node is already uploaded
+                            data_handler.upload_state.node_upload_progress += 1;
+                            continue;
+                        }
+
+                        // Upload Node and MIP to GPU
+                        let (new_node_index, new_node_update) =
+                            data_handler.add_node(&tree_host.tree, &node_upload_request);
+
+                        // Also set the ocbits updated range
+                        ocbits_updated.start = ocbits_updated.start.min(new_node_index * 2);
+                        ocbits_updated.end = ocbits_updated.end.max(new_node_index * 2 + 2);
+
+                        updates.push(new_node_update);
+                        data_handler.upload_state.node_upload_progress += 1;
+                        break;
+                    }
+                    if data_handler.upload_state.node_upload_progress
+                        == data_handler.upload_targets.node_upload_queue.len()
+                    {
+                        // No more nodes to upload!
+                        break;
+                    }
+                }
+
+                // Handle brick uploads
+                if data_handler.upload_state.brick_upload_progress
+                    == data_handler.upload_targets.brick_upload_queue.len()
+                {
+                    break 'uploading_buffers; // All bricks are already uploaded
+                }
+                for _ in 0..data_handler.brick_uploads_per_frame {
+                    debug_assert!(
+                        data_handler.upload_state.brick_upload_progress
+                            < data_handler.upload_targets.brick_upload_queue.len()
+                    );
+
+                    // find a brick to upload
+                    for brick_request_index in data_handler.upload_state.brick_upload_progress
+                        ..data_handler.upload_targets.brick_upload_queue.len()
+                    {
+                        let brick_request = data_handler.upload_targets.brick_upload_queue
+                            [brick_request_index]
+                            .clone();
+                        if
+                        // current brick is not uploaded
+                        data_handler
+                        .upload_targets
+                        .brick_ownership
+                        .get_by_right(&brick_request.ownership)
+                        .is_none()
+                        // current brick can be uploaded
+                        && match brick_request.ownership {
+                            BrickOwnedBy::None => panic!("Request to upload unowned brick?!"),
+                            BrickOwnedBy::NodeAsMIP(node_key) |BrickOwnedBy::NodeAsChild(node_key, _) => {
+                                // Brick can be uploaded if its parent is already uploaded to the GPU
+                                 data_handler.upload_targets.node_key_vs_meta_index.contains_left(&(node_key as usize))
+                                 // Brick should be uploaded if its parent also needs to be uploaded to GPU
+                                 && data_handler.upload_targets.nodes_to_see.contains(&(node_key as usize))
+                            }
+                        } {
+                            updates.push(data_handler.add_brick(&tree_host.tree, &brick_request));
+                        } else {
+                            if brick_request_index
+                                == data_handler.upload_targets.brick_upload_queue.len()
+                            {
+                                break 'uploading_buffers; // Can't upload more bricks this loop
+                            }
+                            continue;
+                        }
+
+                        // In case current brick request is uploaded, just increase progress
+                        debug_assert!(data_handler
+                            .upload_targets
+                            .brick_ownership
+                            .get_by_right(&brick_request.ownership)
+                            .is_some());
+                        if brick_request_index == data_handler.upload_state.brick_upload_progress {
+                            data_handler.upload_state.brick_upload_progress += 1;
+                            if data_handler.upload_state.brick_upload_progress
+                                == data_handler.upload_targets.brick_upload_queue.len()
+                            {
+                                break 'uploading_buffers; // No more bricks to upload
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if view.resources.is_none() {
+            return; // Can't write to buffers as there are not created
+        }
+
+        // Apply writes to GPU
+        let render_queue = &pipeline.render_queue;
+
+        // Data updates for spyglass viewport
+        if view.spyglass.viewport_changed {
+            view.spyglass.viewport_changed = false;
+
+            let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+            buffer.write(&view.spyglass.viewport).unwrap();
+            render_queue.write_buffer(
+                &view.resources.as_ref().unwrap().viewport_buffer,
+                0,
+                &buffer.into_inner(),
+            );
+        }
+
+        // Data updates for BoxTree MIP map feature
+        let tree = &tree_host.tree;
+        if view.data_handler.render_data.mips_enabled != tree.mip_map_strategy.is_enabled() {
+            // Regenerate feature bits
+            view.data_handler.render_data.boxtree_meta.tree_properties = boxtree_properties(tree);
+
+            // Write to GPU
+            let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+            buffer
+                .write(&view.data_handler.render_data.boxtree_meta)
+                .unwrap();
+            pipeline.render_queue.write_buffer(
+                &view.resources.as_ref().unwrap().node_metadata_buffer,
+                0,
+                &buffer.into_inner(),
+            );
+            view.data_handler.render_data.mips_enabled = tree.mip_map_strategy.is_enabled()
+        }
+
+        // Data updates for color palette
+        let host_color_count = tree.map_to_color_index_in_palette.keys().len();
+        let color_palette_size_diff =
+            host_color_count - view.data_handler.upload_state.uploaded_color_palette_size;
+
+        debug_assert!(
+            host_color_count >= view.data_handler.upload_state.uploaded_color_palette_size,
+            "Expected host color palette({:?}), to be larger, than colors stored on the GPU({:?})",
+            host_color_count,
+            view.data_handler.upload_state.uploaded_color_palette_size
+        );
+
+        if 0 < color_palette_size_diff {
+            for i in view.data_handler.upload_state.uploaded_color_palette_size..host_color_count {
+                view.data_handler.render_data.color_palette[i] = tree.voxel_color_palette[i].into();
+            }
+
+            // Upload color palette delta to GPU
+            write_range_to_buffer(
+                &view.data_handler.render_data.color_palette,
+                (host_color_count - color_palette_size_diff)..(host_color_count),
+                &view.resources.as_ref().unwrap().color_palette_buffer,
+                render_queue,
+            );
+        }
+        view.data_handler.upload_state.uploaded_color_palette_size =
+            tree.map_to_color_index_in_palette.keys().len();
+
+        // compile cache updates into write batches
+        let mut node_meta_updated = 0..0;
+        let mut node_children_updated = 0..0;
+        let mut node_mips_updated = 0..0;
+        for cache_update in updates.into_iter() {
+            for meta_index in cache_update.modified_nodes {
+                node_meta_updated.start = node_meta_updated.start.min(meta_index / 8);
+                node_meta_updated.end = node_meta_updated.end.max(meta_index / 8 + 1);
+                node_children_updated.start = node_children_updated
+                    .start
+                    .min(meta_index * BOX_NODE_CHILDREN_COUNT);
+                node_children_updated.end = node_children_updated
+                    .end
+                    .max(meta_index * BOX_NODE_CHILDREN_COUNT + BOX_NODE_CHILDREN_COUNT);
+                node_mips_updated.start = node_mips_updated.start.min(meta_index);
+                node_mips_updated.end = node_mips_updated.end.max(meta_index + 1);
+            }
+
+            // Upload Voxel data
+            if let Some(modified_brick_data) = cache_update.brick_update {
+                let voxel_start_index =
+                    modified_brick_data.brick_index * modified_brick_data.data.len();
+                debug_assert_eq!(
+                    modified_brick_data.data.len(),
+                    tree.brick_dim.pow(3) as usize,
+                    "Expected Brick slice to align to tree brick dimension"
+                );
+                unsafe {
+                    render_queue.write_buffer(
+                        &view.resources.as_ref().unwrap().voxels_buffer,
+                        (voxel_start_index * std::mem::size_of_val(&modified_brick_data.data[0]))
+                            as u64,
+                        modified_brick_data.data.align_to::<u8>().1,
+                    );
+                }
+            }
+        }
+        write_range_to_buffer(
+            &view.data_handler.render_data.node_metadata,
+            node_meta_updated,
+            &view.resources.as_ref().unwrap().node_metadata_buffer,
+            render_queue,
+        );
+        write_range_to_buffer(
+            &view.data_handler.render_data.node_children,
+            node_children_updated,
+            &view.resources.as_ref().unwrap().node_children_buffer,
+            render_queue,
+        );
+        write_range_to_buffer(
+            &view.data_handler.render_data.node_ocbits,
+            ocbits_updated,
+            &view.resources.as_ref().unwrap().node_ocbits_buffer,
+            render_queue,
+        );
+        write_range_to_buffer(
+            &view.data_handler.render_data.node_mips,
+            node_mips_updated,
+            &view.resources.as_ref().unwrap().node_mips_buffer,
+            render_queue,
+        );
+    }
+}
+
+//##############################################################################
+//  █████  █████ ███████████  █████          ███████      █████████   ██████████
+// ░░███  ░░███ ░░███░░░░░███░░███         ███░░░░░███   ███░░░░░███ ░░███░░░░███
+//  ░███   ░███  ░███    ░███ ░███        ███     ░░███ ░███    ░███  ░███   ░░███
+//  ░███   ░███  ░██████████  ░███       ░███      ░███ ░███████████  ░███    ░███
+//  ░███   ░███  ░███░░░░░░   ░███       ░███      ░███ ░███░░░░░███  ░███    ░███
+//  ░███   ░███  ░███         ░███      █░░███     ███  ░███    ░███  ░███    ███
+//  ░░████████   █████        ███████████ ░░░███████░   █████   █████ ██████████
+//   ░░░░░░░░   ░░░░░        ░░░░░░░░░░░    ░░░░░░░    ░░░░░   ░░░░░ ░░░░░░░░░░
+//     ██████    █████  █████ ██████████ █████  █████ ██████████  █████████
+//   ███░░░░███ ░░███  ░░███ ░░███░░░░░█░░███  ░░███ ░░███░░░░░█ ███░░░░░███
+//  ███    ░░███ ░███   ░███  ░███  █ ░  ░███   ░███  ░███  █ ░ ░███    ░░░
+// ░███     ░███ ░███   ░███  ░██████    ░███   ░███  ░██████   ░░█████████
+// ░███   ██░███ ░███   ░███  ░███░░█    ░███   ░███  ░███░░█    ░░░░░░░░███
+// ░░███ ░░████  ░███   ░███  ░███ ░   █ ░███   ░███  ░███ ░   █ ███    ░███
+//  ░░░██████░██ ░░████████   ██████████ ░░████████   ██████████░░█████████
+//##############################################################################
+/// Recreates the list of nodes and bricks to upload based on the current position and view distance
+pub(crate) fn rebuild_upload_queues<
+    #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
+        + ToBencode
+        + Serializ
+        + DeserializeOwned
+        + Default
+        + Eq
+        + Clone
+        + Hash
+        + VoxelData
+        + Send
+        + Sync
+        + 'static,
+    #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+>(
+    tree: &BoxTree<T>,
+    viewport_center_: &V3cf32,
+    view_distance: f32,
+    upload_targets: &mut UploadQueueTargets,
+) {
+    upload_targets.nodes_to_see.clear();
+    upload_targets.brick_upload_queue.clear();
+    upload_targets.node_upload_queue.clear();
+
+    // Determine view center range
+    let viewport_center = V3c::new(
+        viewport_center_.x.clamp(0., tree.boxtree_size as f32),
+        viewport_center_.y.clamp(0., tree.boxtree_size as f32),
+        viewport_center_.z.clamp(0., tree.boxtree_size as f32),
+    );
+    let viewport_bl = viewport_center - V3c::unit(view_distance / 2.);
+    let viewport_tr = viewport_bl + V3c::unit(view_distance / 2.);
+
+    // Decide the level boundaries to work within
+    let max_mip_level = (tree.boxtree_size as f32 / tree.brick_dim as f32)
+        .log(4.)
+        .ceil() as i32;
+    let deepest_mip_level_to_upload = ((viewport_center - *viewport_center_).length()
+        / view_distance)
+        .ceil()
+        .min(max_mip_level as f32) as i32;
+
+    // Look for the smallest node covering the entirety of the viewing distance
+    let mut node_bounds = Cube::root_bounds(tree.boxtree_size as f32);
+    let mut node_stack = vec![NodeUploadRequest {
+        node_key: BoxTree::<T>::ROOT_NODE_KEY as usize,
+        parent_key: BoxTree::<T>::ROOT_NODE_KEY as usize,
+        sectant: 0,
+    }];
+    loop {
+        let node_key = node_stack.last().unwrap().node_key;
+        if
+        // current node is either leaf or empty
+        matches!(tree.nodes.get(node_key), NodeContent::Nothing | NodeContent::Leaf(_) | NodeContent::UniformLeaf(_))
+        // or target child boundaries don't cover view distance
+        || (node_bounds.size / BOX_NODE_DIMENSION as f32) < view_distance
+        || node_bounds.contains(&viewport_bl)
+        || node_bounds.contains(&viewport_tr)
+        {
+            break;
+        }
+
+        // Hash the position to the target child
+        let child_sectant_at_position = node_bounds.sectant_for(&viewport_center);
+        let child_key_at_position =
+            tree.node_children[node_key].child(child_sectant_at_position) as usize;
+
+        // There is a valid child at the given position inside the node, recurse into it
+        if tree.nodes.key_is_valid(child_key_at_position as usize) {
+            node_stack.push(NodeUploadRequest {
+                node_key: child_key_at_position,
+                parent_key: node_key,
+                sectant: child_sectant_at_position,
+            });
+            node_bounds = Cube::child_bounds_for(&node_bounds, child_sectant_at_position);
+        } else {
+            break;
+        }
+    }
+
+    // Add parent and children nodes into the upload queue and view set
+    let center_node_key = node_stack.last().unwrap().node_key.clone();
+    upload_targets.node_upload_queue.append(
+        &mut node_stack
+            .drain(..)
+            .map(|v| {
+                upload_targets.nodes_to_see.insert(v.node_key);
+                v
+            })
+            .collect(),
+    );
+
+    add_children_to_upload_queue(
+        center_node_key,
+        &node_bounds,
+        tree,
+        &V3c::from(viewport_bl),
+        view_distance,
+        upload_targets,
+        max_mip_level - deepest_mip_level_to_upload + 1,
+    );
+}
+
+fn add_children_to_upload_queue<
+    #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
+        + ToBencode
+        + Serializ
+        + DeserializeOwned
+        + Default
+        + Eq
+        + Clone
+        + Hash
+        + VoxelData
+        + Send
+        + Sync
+        + 'static,
+    #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+    #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
+>(
+    node_key: usize,
+    node_bounds: &Cube,
+    tree: &BoxTree<T>,
+    viewport_bl: &V3c<u32>,
+    view_distance: f32,
+    upload_targets: &mut UploadQueueTargets,
+    depth_left: i32,
+) {
+    if depth_left <= 0 {
+        return;
+    }
+
+    let viewport_contains_target_fn = |viewport_bl: &V3c<u32>,
+                                       view_distance: f32,
+                                       position_in_target: &V3c<u32>,
+                                       update_size_in_target: &V3c<u32>|
+     -> bool {
+        !((viewport_bl.x + view_distance as u32) <= position_in_target.x
+            || (position_in_target.x + update_size_in_target.x) <= viewport_bl.x
+            || (viewport_bl.y + view_distance as u32) <= position_in_target.y
+            || (position_in_target.y + update_size_in_target.y) <= viewport_bl.y
+            || (viewport_bl.z + view_distance as u32) <= position_in_target.z
+            || (position_in_target.z + update_size_in_target.z) <= viewport_bl.z)
+    };
+
+    debug_assert!(
+        upload_targets.nodes_to_see.contains(&node_key),
+        "Expected node to be already included in the upload queue"
+    );
+    match tree.nodes.get(node_key) {
+        NodeContent::Nothing => {}
+        NodeContent::UniformLeaf(brick) => {
+            match &brick {
+                BrickData::Empty | BrickData::Solid(_) => {
+                    // Empty brickdata is not uploaded,
+                    // while solid brickdata should be present in the nodes data
+                }
+                BrickData::Parted(_brick) => {
+                    let brick_ownership = BrickOwnedBy::NodeAsChild(node_key as u32, 0);
+                    if viewport_contains_target_fn(
+                        viewport_bl,
+                        view_distance,
+                        &V3c::from(node_bounds.min_position),
+                        &V3c::unit(node_bounds.size as u32),
+                    ) && upload_targets
+                        .brick_ownership
+                        .get_by_right(&brick_ownership)
+                        .is_none()
+                    {
+                        upload_targets.brick_upload_queue.push(BrickUploadRequest {
+                            ownership: brick_ownership,
+                            min_position: node_bounds.min_position,
+                        });
+                    }
+                }
+            };
+        }
+        NodeContent::Leaf(bricks) => {
+            execute_for_relevant_sectants(
+                node_bounds,
+                viewport_bl,
+                view_distance as u32,
+                |position_in_target,
+                 update_size_in_target,
+                 target_child_sectant,
+                 &target_bounds| {
+                    match &bricks[target_child_sectant as usize] {
+                        BrickData::Empty | BrickData::Solid(_) => {
+                            // Empty brickdata is not uploaded,
+                            // while solid brickdata should be present in the nodes data
+                        }
+                        BrickData::Parted(_brick) => {
+                            let brick_ownership =
+                                BrickOwnedBy::NodeAsChild(node_key as u32, target_child_sectant);
+                            if viewport_contains_target_fn(
+                                viewport_bl,
+                                view_distance,
+                                &position_in_target,
+                                &update_size_in_target,
+                            ) && upload_targets
+                                .brick_ownership
+                                .get_by_right(&brick_ownership)
+                                .is_none()
+                            {
+                                upload_targets.brick_upload_queue.push(BrickUploadRequest {
+                                    ownership: brick_ownership,
+                                    min_position: target_bounds.min_position,
+                                });
+                            }
+                        }
+                    };
+                },
+            );
+        }
+        NodeContent::Internal(_ocbits) => {
+            execute_for_relevant_sectants(
+                node_bounds,
+                viewport_bl,
+                view_distance as u32,
+                |position_in_target,
+                 update_size_in_target,
+                 target_child_sectant,
+                 &target_bounds| {
+                    if let Some(child_key) = tree.valid_child_for(node_key, target_child_sectant) {
+                        if viewport_contains_target_fn(
+                            viewport_bl,
+                            view_distance,
+                            &position_in_target,
+                            &update_size_in_target,
+                        ) {
+                            upload_targets.node_upload_queue.push(NodeUploadRequest {
+                                node_key: child_key,
+                                parent_key: node_key,
+                                sectant: target_child_sectant,
+                            });
+                            upload_targets.nodes_to_see.insert(child_key);
+                            add_children_to_upload_queue(
+                                child_key,
+                                &target_bounds,
+                                tree,
+                                &viewport_bl,
+                                view_distance,
+                                upload_targets,
+                            );
+                        }
+                    }
+                },
+            );
+        }
     }
 }
 
@@ -222,69 +852,6 @@ fn read_buffer(
     buffer.unmap();
 }
 
-/// Handles data reads from GPU every loop, mainly data requests and usaage updates.
-/// Based on https://docs.rs/bevy/latest/src/gpu_readback/gpu_readback.rs.html
-pub(crate) fn handle_gpu_readback(
-    render_device: Res<RenderDevice>,
-    mut viewset: Option<ResMut<VhxViewSet>>,
-    mut vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
-) {
-    let (Some(_vhx_pipeline), Some(viewset)) = (vhx_pipeline.as_mut(), viewset.as_mut()) else {
-        return; // Nothing to without the pipeline or a viewset
-    };
-    if viewset.is_empty() {
-        return; // Nothing to do without views..
-    }
-    let mut view = viewset.views[0].write().unwrap();
-    let resources = viewset.resources[0].as_ref();
-
-    if resources.is_some() {
-        let resources = resources.unwrap();
-
-        // init sequence: checking if data is written to the GPU yet
-        if view.init_data_sent && !view.data_ready {
-            let mut received_value = Vec::new();
-            read_buffer(
-                &render_device,
-                &resources.readable_used_bits_buffer,
-                0..1,
-                &mut received_value,
-            );
-            if view.data_handler.render_data.used_bits[0] == received_value[0] {
-                view.data_ready = true;
-            }
-        }
-
-        // Read node requests
-        read_buffer(
-            &render_device,
-            &resources.readable_node_requests_buffer,
-            0..view.spyglass.node_requests.len(),
-            &mut view.spyglass.node_requests,
-        );
-
-        let any_nodes_requested = {
-            let mut is_metadata_required_this_loop = false;
-            for node_request in &view.spyglass.node_requests {
-                if *node_request != empty_marker::<u32>() {
-                    is_metadata_required_this_loop = true;
-                    break;
-                }
-            }
-            is_metadata_required_this_loop
-        };
-
-        if any_nodes_requested && view.data_ready {
-            read_buffer(
-                &render_device,
-                &resources.readable_used_bits_buffer,
-                0..view.data_handler.render_data.used_bits.len(),
-                &mut view.data_handler.render_data.used_bits,
-            );
-        }
-    }
-}
-
 //##############################################################################
 //    █████████  ███████████  █████  █████
 //   ███░░░░░███░░███░░░░░███░░███  ░░███
@@ -332,456 +899,5 @@ fn write_range_to_buffer<U>(
         unsafe {
             render_queue.write_buffer(buffer, byte_offset, slice.align_to::<u8>().1);
         }
-    }
-}
-
-/// Extend the given HashMap with a list of brick updates, except avoid overwriting available data with None value
-fn extend_brick_updates<'a>(
-    brick_updates: &mut HashMap<usize, Option<&'a [PaletteIndexValues]>>,
-    addition: Vec<BrickUpdate<'a>>,
-) {
-    for brick_update in addition {
-        brick_updates
-            .entry(brick_update.brick_index)
-            .and_modify(|current_brick_data| {
-                match (*current_brick_data, brick_update.data) {
-                    (None, None) | (Some(_), None) => {} // Keep the current brick data if there is already something
-                    (Some(_), Some(_)) | (None, Some(_)) => {
-                        // Overwrite the current brick request
-                        *current_brick_data = brick_update.data
-                    }
-                }
-            })
-            .or_insert(brick_update.data);
-    }
-}
-
-/// Handles Data Streaming to the GPU based on incoming requests from the view(s)
-pub(crate) fn write_to_gpu<
-    #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
-        + ToBencode
-        + Serialize
-        + DeserializeOwned
-        + Default
-        + Eq
-        + Clone
-        + Hash
-        + VoxelData
-        + Send
-        + Sync
-        + 'static,
-    #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
-    #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
-    #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
->(
-    mut tree_gpu_host: Option<ResMut<BoxTreeGPUHost<T>>>,
-    mut vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
-    mut viewset: Option<ResMut<VhxViewSet>>,
-) {
-    if let (Some(pipeline), Some(tree_host), Some(viewset)) = (
-        vhx_pipeline.as_mut(),
-        tree_gpu_host.as_mut(),
-        viewset.as_mut(),
-    ) {
-        if viewset.is_empty() {
-            return; // Nothing to do without views..
-        }
-
-        let mut view = viewset.views[0].write().unwrap();
-        let render_queue = &pipeline.render_queue;
-        let resources = if let Some(resources) = viewset.resources[0].as_ref() {
-            resources
-        } else {
-            // No resources available yet, can't write to them
-            return;
-        };
-
-        // Initial BoxTree data upload
-        if !view.init_data_sent || view.reload {
-            // write data for root node
-            view.data_handler
-                .add_node(&tree_host.tree, BoxTree::<T>::ROOT_NODE_KEY as usize);
-
-            // Set some well recognizable init value
-            view.data_handler.render_data.used_bits[0] = 0xBEEF;
-
-            // Write out the initial data package
-            write_range_to_buffer(
-                &view.data_handler.render_data.used_bits,
-                0..1,
-                &resources.used_bits_buffer,
-                &pipeline.render_queue,
-            );
-            write_range_to_buffer(
-                &view.data_handler.render_data.node_metadata,
-                0..1,
-                &resources.node_metadata_buffer,
-                &pipeline.render_queue,
-            );
-            write_range_to_buffer(
-                &view.data_handler.render_data.node_children,
-                0..BOX_NODE_CHILDREN_COUNT,
-                &resources.node_children_buffer,
-                &pipeline.render_queue,
-            );
-            write_range_to_buffer(
-                &view.data_handler.render_data.node_mips,
-                0..1,
-                &resources.node_mips_buffer,
-                &pipeline.render_queue,
-            );
-            write_range_to_buffer(
-                &view.data_handler.render_data.node_ocbits,
-                0..2,
-                &resources.node_ocbits_buffer,
-                &pipeline.render_queue,
-            );
-            view.init_data_sent = true;
-            view.reload = false;
-        }
-
-        // Data updates for spyglass viewport
-        if view.spyglass.viewport_changed {
-            let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-            buffer.write(&view.spyglass.viewport).unwrap();
-            render_queue.write_buffer(&resources.viewport_buffer, 0, &buffer.into_inner());
-            view.spyglass.viewport_changed = false;
-        }
-
-        // Data updates for BoxTree MIP map feature
-        let tree = &tree_host.tree;
-        if view.data_handler.render_data.mips_enabled != tree.mip_map_strategy.is_enabled() {
-            // Regenerate feature bits
-            view.data_handler.render_data.boxtree_meta.tree_properties = boxtree_properties(tree);
-
-            // Write to GPU
-            let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-            buffer
-                .write(&view.data_handler.render_data.boxtree_meta)
-                .unwrap();
-            pipeline.render_queue.write_buffer(
-                &resources.node_metadata_buffer,
-                0,
-                &buffer.into_inner(),
-            );
-            view.data_handler.render_data.mips_enabled = tree.mip_map_strategy.is_enabled()
-        }
-
-        // Handle node requests, update cache
-        let mut node_meta_updated = Range {
-            start: view.data_handler.render_data.node_metadata.len(),
-            end: 0,
-        };
-        let mut used_bits_updated = Range {
-            start: view.data_handler.render_data.used_bits.len(),
-            end: 0,
-        };
-        let mut ocbits_updated = Range {
-            start: view.data_handler.render_data.node_ocbits.len(),
-            end: 0,
-        };
-        let mut node_children_updated = Range {
-            start: view.data_handler.render_data.node_children.len(),
-            end: 0,
-        };
-        let mut node_mips_updated = Range {
-            start: view.data_handler.render_data.node_mips.len(),
-            end: 0,
-        };
-        let mut node_requests = view.spyglass.node_requests.clone();
-        let mut modified_nodes = HashSet::<usize>::new();
-        let mut modified_bricks = HashMap::<usize, Option<&[PaletteIndexValues]>>::new();
-        let victim_node_loop_count = view.data_handler.victim_node.get_loop_count();
-        for node_request in &mut node_requests {
-            if *node_request == empty_marker::<u32>() {
-                continue;
-            }
-            let requested_parent_meta_index = (*node_request & 0x00FFFFFF) as usize;
-            let requested_child_sectant = ((*node_request & 0xFF000000) >> 24) as u8;
-
-            debug_assert!(view
-                .data_handler
-                .node_key_vs_meta_index
-                .contains_right(&requested_parent_meta_index));
-
-            let requested_parent_node_key = *view
-                .data_handler
-                .node_key_vs_meta_index
-                .get_by_right(&requested_parent_meta_index)
-                .unwrap();
-
-            debug_assert!(
-                tree.nodes.key_is_valid(requested_parent_node_key),
-                "Expected parent node({:?}) to be valid in GPU request.",
-                requested_parent_node_key
-            );
-
-            if modified_nodes.contains(&requested_parent_meta_index)
-                || !view
-                    .data_handler
-                    .node_key_vs_meta_index
-                    .contains_left(&requested_parent_node_key)
-            {
-                // Do not accept a request if the requester meta is already overwritten or deleted
-                continue;
-            }
-
-            // In case MIP is requested, not node child
-            if OOB_SECTANT == requested_child_sectant {
-                // Upload MIP to bricks
-                let (child_descriptor, cache_update) =
-                    view.data_handler
-                        .add_brick(tree, requested_parent_node_key, OOB_SECTANT);
-
-                used_bits_updated.start = used_bits_updated
-                    .start
-                    .min(cache_update.modified_usage_range.start);
-                used_bits_updated.end = used_bits_updated
-                    .end
-                    .max(cache_update.modified_usage_range.end);
-
-                modified_nodes.extend(cache_update.modified_nodes);
-                extend_brick_updates(&mut modified_bricks, cache_update.brick_updates);
-
-                // Update mip index
-                view.data_handler.render_data.node_mips[requested_parent_meta_index] =
-                    child_descriptor as u32;
-
-                continue;
-            }
-
-            // In case node child is requested, not a MIP
-            modified_nodes.insert(requested_parent_meta_index);
-            ocbits_updated.start = ocbits_updated.start.min(requested_parent_meta_index * 2);
-            ocbits_updated.end = ocbits_updated.end.max(requested_parent_meta_index * 2 + 2);
-            let requester_first_child_index = requested_parent_meta_index * BOX_NODE_CHILDREN_COUNT;
-            let requester_child_offset =
-                requester_first_child_index + requested_child_sectant as usize;
-            match tree.nodes.get(requested_parent_node_key) {
-                NodeContent::Nothing => {} // parent is empty, nothing to do
-                NodeContent::Internal(_) => {
-                    let requested_child_node_key = tree_host.tree.node_children
-                        [requested_parent_node_key]
-                        .child(requested_child_sectant);
-                    debug_assert!(
-                            tree.nodes.key_is_valid(requested_child_node_key),
-                            "Expected key({:?}, child of node[{:?}][{:?}] in meta[{:?}]) to be valid in GPU request.",
-                            requested_child_node_key, requested_parent_node_key, requested_child_sectant, requested_parent_meta_index
-                        );
-                    let child_index = if !view
-                        .data_handler
-                        .node_key_vs_meta_index
-                        .contains_left(&requested_child_node_key)
-                    {
-                        let (child_index, cache_update) =
-                            view.data_handler.add_node(tree, requested_child_node_key);
-
-                        used_bits_updated.start = used_bits_updated
-                            .start
-                            .min(cache_update.modified_usage_range.start);
-                        used_bits_updated.end = used_bits_updated
-                            .end
-                            .max(cache_update.modified_usage_range.end);
-                        modified_nodes.extend(cache_update.modified_nodes);
-                        extend_brick_updates(&mut modified_bricks, cache_update.brick_updates);
-
-                        child_index
-                    } else {
-                        *view
-                            .data_handler
-                            .node_key_vs_meta_index
-                            .get_by_left(&requested_child_node_key)
-                            .unwrap()
-                    };
-
-                    // Update connection to parent
-                    view.data_handler.render_data.node_children[requester_child_offset] =
-                        child_index as u32;
-
-                    debug_assert!(
-                        view.data_handler
-                            .node_key_vs_meta_index
-                            .contains_right(&requested_parent_meta_index),
-                        "Requester parent erased while adding its child node to meta"
-                    );
-
-                    ocbits_updated.start = ocbits_updated.start.min(child_index * 2);
-                    ocbits_updated.end = ocbits_updated.end.max(child_index * 2 + 2);
-                }
-                NodeContent::UniformLeaf(brick) => {
-                    // Only upload brick if it's a parted, not already available brick
-                    if matches!(brick, BrickData::Parted(_))
-                        && view.data_handler.render_data.node_children[requester_first_child_index]
-                            == empty_marker::<u32>()
-                    {
-                        let (child_descriptor, cache_update) =
-                            view.data_handler
-                                .add_brick(tree, requested_parent_node_key, 0);
-
-                        view.data_handler.render_data.node_children[requester_first_child_index] =
-                            child_descriptor as u32;
-
-                        used_bits_updated.start = used_bits_updated
-                            .start
-                            .min(cache_update.modified_usage_range.start);
-                        used_bits_updated.end = used_bits_updated
-                            .end
-                            .max(cache_update.modified_usage_range.end);
-                        modified_nodes.extend(cache_update.modified_nodes);
-                        extend_brick_updates(&mut modified_bricks, cache_update.brick_updates);
-                    }
-                }
-                NodeContent::Leaf(bricks) => {
-                    // Only upload brick if it's a parted, not already available brick
-                    if matches!(
-                        bricks[requested_child_sectant as usize],
-                        BrickData::Parted(_)
-                    ) && view.data_handler.render_data.node_children[requester_child_offset]
-                        == empty_marker::<u32>()
-                    {
-                        let (child_descriptor, cache_update) = view.data_handler.add_brick(
-                            tree,
-                            requested_parent_node_key,
-                            requested_child_sectant,
-                        );
-
-                        view.data_handler.render_data.node_children[requester_child_offset] =
-                            child_descriptor as u32;
-
-                        used_bits_updated.start = used_bits_updated
-                            .start
-                            .min(cache_update.modified_usage_range.start);
-                        used_bits_updated.end = used_bits_updated
-                            .end
-                            .max(cache_update.modified_usage_range.end);
-                        modified_nodes.extend(cache_update.modified_nodes);
-                        extend_brick_updates(&mut modified_bricks, cache_update.brick_updates);
-                    }
-                }
-            }
-
-            if victim_node_loop_count != view.data_handler.victim_node.get_loop_count() {
-                break;
-            }
-        }
-
-        debug_assert!(
-            // Either all node requests are empty
-            node_requests
-                    .iter()
-                    .filter(|&v| *v == empty_marker::<u32>())
-                    .count()
-                    == node_requests.len()
-                    // Or some nodes were updated this loop
-                    || !modified_nodes.is_empty()
-                    // Or the distance traveled by the victim pointer this loop is small enough
-                    || (view.data_handler.victim_node.len() as f32 * 0.5) as usize
-                        > (victim_node_loop_count - view.data_handler.victim_node.get_loop_count()),
-            "Couldn't process a single request because size of the buffer is too small."
-        );
-
-        for node_request in &mut node_requests {
-            *node_request = empty_marker();
-        }
-
-        // Set updated buffers range based on modified nodes and bricks
-        for modified_node_index in &modified_nodes {
-            node_meta_updated.start = node_meta_updated.start.min(*modified_node_index / 8);
-            node_meta_updated.end = node_meta_updated.end.max(modified_node_index / 8 + 1);
-            node_children_updated.start = node_children_updated
-                .start
-                .min(modified_node_index * BOX_NODE_CHILDREN_COUNT);
-            node_children_updated.end = node_children_updated
-                .end
-                .max(modified_node_index * BOX_NODE_CHILDREN_COUNT + BOX_NODE_CHILDREN_COUNT);
-            node_mips_updated.start = node_mips_updated.start.min(*modified_node_index);
-            node_mips_updated.end = node_mips_updated.end.max(modified_node_index + 1);
-        }
-
-        // write back updated data
-        let host_color_count = tree.map_to_color_index_in_palette.keys().len();
-        let color_palette_size_diff =
-            host_color_count - view.data_handler.uploaded_color_palette_size;
-        let resources = &viewset.resources[0].as_ref().unwrap();
-
-        debug_assert!(
-            host_color_count >= view.data_handler.uploaded_color_palette_size,
-            "Expected host color palette({:?}), to be larger, than colors stored on the GPU({:?})",
-            host_color_count,
-            view.data_handler.uploaded_color_palette_size
-        );
-
-        // Color palette
-        if 0 < color_palette_size_diff {
-            for i in view.data_handler.uploaded_color_palette_size..host_color_count {
-                view.data_handler.render_data.color_palette[i] = tree.voxel_color_palette[i].into();
-            }
-
-            // Upload color palette delta to GPU
-            write_range_to_buffer(
-                &view.data_handler.render_data.color_palette,
-                (host_color_count - color_palette_size_diff)..(host_color_count),
-                &resources.color_palette_buffer,
-                render_queue,
-            );
-        }
-        view.data_handler.uploaded_color_palette_size =
-            tree.map_to_color_index_in_palette.keys().len();
-
-        // Render data
-        write_range_to_buffer(
-            &view.data_handler.render_data.used_bits,
-            used_bits_updated,
-            &resources.used_bits_buffer,
-            render_queue,
-        );
-        write_range_to_buffer(
-            &view.data_handler.render_data.node_metadata,
-            node_meta_updated,
-            &resources.node_metadata_buffer,
-            render_queue,
-        );
-        write_range_to_buffer(
-            &view.data_handler.render_data.node_children,
-            node_children_updated,
-            &resources.node_children_buffer,
-            render_queue,
-        );
-        write_range_to_buffer(
-            &view.data_handler.render_data.node_ocbits,
-            ocbits_updated,
-            &resources.node_ocbits_buffer,
-            render_queue,
-        );
-        write_range_to_buffer(
-            &view.data_handler.render_data.node_mips,
-            node_mips_updated,
-            &resources.node_mips_buffer,
-            render_queue,
-        );
-
-        // Upload Voxel data
-        for modified_brick_data in &modified_bricks {
-            if let Some(new_brick_data) = modified_brick_data.1 {
-                let brick_start_index = *modified_brick_data.0 * new_brick_data.len();
-                debug_assert_eq!(
-                    new_brick_data.len(),
-                    tree.brick_dim.pow(3) as usize,
-                    "Expected Brick slice to align to tree brick dimension"
-                );
-                unsafe {
-                    render_queue.write_buffer(
-                        &resources.voxels_buffer,
-                        (brick_start_index * std::mem::size_of_val(&new_brick_data[0])) as u64,
-                        new_brick_data.align_to::<u8>().1,
-                    );
-                }
-            }
-        }
-
-        // Node requests
-        let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-        buffer.write(&node_requests).unwrap();
-        render_queue.write_buffer(&resources.node_requests_buffer, 0, &buffer.into_inner());
     }
 }

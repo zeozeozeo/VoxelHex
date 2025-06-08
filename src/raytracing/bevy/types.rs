@@ -1,4 +1,7 @@
-use crate::boxtree::{types::PaletteIndexValues, BoxTree, V3cf32, VoxelData};
+use crate::{
+    boxtree::{types::PaletteIndexValues, BoxTree, V3c, V3cf32, VoxelData},
+    spatial::Cube,
+};
 use bevy::{
     asset::Handle,
     ecs::resource::Resource,
@@ -16,8 +19,8 @@ use bevy::{
 };
 use bimap::BiHashMap;
 use std::{
+    collections::HashSet,
     hash::Hash,
-    ops::Range,
     sync::{Arc, RwLock},
 };
 
@@ -55,7 +58,10 @@ pub struct BoxTreeMetaData {
 #[derive(Debug, Clone, Copy, ShaderType)]
 pub struct Viewport {
     /// The origin of the viewport, think of it as the position the eye
-    pub origin: V3cf32,
+    pub(crate) origin: V3cf32,
+
+    /// Delta position in case the viewport origin is displaced
+    pub(crate) origin_delta: V3cf32,
 
     /// The direction the raycasts are based upon, think of it as wherever the eye looks
     pub direction: V3cf32,
@@ -68,13 +74,6 @@ pub struct Viewport {
 
     /// Field of View: how scattered will the rays in the viewport are
     pub fov: f32,
-}
-
-pub struct RenderBevyPlugin<T = u32>
-where
-    T: Default + Clone + Eq + VoxelData + Send + Sync + 'static,
-{
-    pub(crate) dummy: std::marker::PhantomData<T>,
 }
 
 #[derive(Resource, Clone, TypePath, ExtractResource)]
@@ -91,7 +90,6 @@ where
 pub struct VhxViewSet {
     pub(crate) changed: bool,
     pub(crate) views: Vec<Arc<RwLock<BoxTreeGPUView>>>,
-    pub(crate) resources: Vec<Option<BoxTreeRenderDataResources>>,
 }
 
 /// The Camera responsible for storing frustum and view related data
@@ -108,15 +106,18 @@ pub struct BoxTreeSpyGlass {
 
     // The viewport containing display information
     pub(crate) viewport: Viewport,
-
-    // The nodes requested by the raytracing algorithm to be displayed
-    pub(crate) node_requests: Vec<u32>,
 }
 
 /// A View of an Octree
 #[derive(Debug, Resource, Clone)]
 pub struct BoxTreeGPUView {
-    /// The camera for casting the rays
+    /// Buffers, layouts and bind groups for the view
+    pub(crate) resources: Option<BoxTreeRenderDataResources>,
+
+    /// The data handler responsible for uploading data to the GPU
+    pub data_handler: BoxTreeGPUDataHandler,
+
+    /// The plane for the basis of the raycasts
     pub spyglass: BoxTreeSpyGlass,
 
     /// Set to true if the view needs to be reloaded
@@ -125,17 +126,8 @@ pub struct BoxTreeGPUView {
     /// Set to true if the view needs to be refreshed, e.g. by a resolution change
     pub(crate) rebuild: bool,
 
-    /// True if the initial data already sent to GPU
-    pub(crate) init_data_sent: bool,
-
-    /// Sets to true if related data on the GPU matches with CPU
-    pub(crate) data_ready: bool,
-
     /// Sets to true if new pipeline textures are ready
     pub(crate) new_images_ready: bool,
-
-    /// The data handler responsible for uploading data to the GPU
-    pub(crate) data_handler: BoxTreeGPUDataHandler,
 
     /// The currently used resolution the raycasting dimensions are based for the base ray
     pub(crate) resolution: [u32; 2],
@@ -148,12 +140,13 @@ pub struct BoxTreeGPUView {
 
     /// The new output texture to be used, if any
     pub(crate) new_output_texture: Option<Handle<Image>>,
+
+    pub(crate) brick_slot: Cube,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct VictimPointer {
     pub(crate) max_meta_len: usize,
-    pub(crate) loop_count: usize,
     pub(crate) stored_items: usize,
     pub(crate) meta_index: usize,
     pub(crate) child: usize,
@@ -161,19 +154,91 @@ pub(crate) struct VictimPointer {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum BrickOwnedBy {
-    NotOwned,
+    None,
     NodeAsChild(u32, u8),
     NodeAsMIP(u32),
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct NodeUploadRequest {
+    pub(crate) node_key: usize,
+    pub(crate) parent_key: usize,
+    pub(crate) sectant: u8,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BrickUploadRequest {
+    pub(crate) ownership: BrickOwnedBy,
+    pub(crate) min_position: V3cf32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UploadQueueTargets {
+    /// The nodes to upload to the GPU in ascending sorted order.
+    /// This is a complete list of all the nodes required to be on the GPU.
+    pub(crate) node_upload_queue: Vec<NodeUploadRequest>,
+
+    /// This is a list of the bricks to upload to the GPU (bricks not yet uploaded)
+    pub(crate) brick_upload_queue: Vec<BrickUploadRequest>,
+
+    /// Map to connect brick indexes in GPU data to their counterparts in the tree
+    pub(crate) brick_ownership: BiHashMap<usize, BrickOwnedBy>,
+
+    /// Centerpoint of each brick; Valid only if the brick is owned!
+    pub(crate) brick_positions: Vec<V3c<f32>>,
+
+    /// Map to connect tree node keys to node meta indexes
+    pub(crate) node_key_vs_meta_index: BiHashMap<usize, usize>,
+
+    /// A set containing all nodes which should be on the GPU
+    pub(crate) nodes_to_see: HashSet<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UploadQueueStatus {
+    /// The number of nodes already uploaded into the GPU
+    /// from @node_upload_queue
+    pub(crate) node_upload_progress: usize,
+
+    /// The number of bricks already uploaded into the GPU
+    /// from @node_upload_queue
+    pub(crate) brick_upload_progress: usize,
+
+    /// Index pointing inside GPU data where the search will start
+    /// for the next brick to be overwritten
+    pub(crate) victim_brick: usize,
+
+    /// Index pointing inside GPU data where the search will start
+    /// for the next node to be overwritten
+    pub(crate) victim_node: VictimPointer,
+
+    /// The number of colors uploaded to the GPU
+    pub(crate) uploaded_color_palette_size: usize,
+}
+
 #[derive(Debug, Resource, Clone)]
 pub struct BoxTreeGPUDataHandler {
+    /// Tells the handler how many nodes to upload in one frame
+    pub node_uploads_per_frame: usize,
+
+    /// Tells the handler how many bricks to upload in one frame
+    pub brick_uploads_per_frame: usize,
+
+    /// Tells the handler how far away to look for bricks to find
+    /// the furthest to unload
+    pub brick_unload_search_perimeter: usize,
+
+    /// The area on which node and brick upload is based on
+    pub(crate) upload_range: Cube,
+
+    /// The data the GPU displays
     pub(crate) render_data: BoxTreeRenderData,
-    pub(crate) victim_node: VictimPointer,
-    pub(crate) victim_brick: usize,
-    pub(crate) node_key_vs_meta_index: BiHashMap<usize, usize>,
-    pub(crate) brick_ownership: BiHashMap<usize, BrickOwnedBy>,
-    pub(crate) uploaded_color_palette_size: usize,
+
+    /// Target and progress data for GPU uploads
+    pub(crate) upload_targets: UploadQueueTargets,
+
+    /// Target and progress data for GPU uploads
+    pub(crate) upload_state: UploadQueueStatus,
 }
 
 #[derive(Debug, Clone)]
@@ -185,14 +250,12 @@ pub(crate) struct BoxTreeRenderDataResources {
     // --{
     pub(crate) spyglass_bind_group: BindGroup,
     pub(crate) viewport_buffer: Buffer,
-    pub(crate) node_requests_buffer: Buffer,
     // }--
 
     // Octree render data group
     // --{
     pub(crate) tree_bind_group: BindGroup,
     pub(crate) boxtree_meta_buffer: Buffer,
-    pub(crate) used_bits_buffer: Buffer,
     pub(crate) node_metadata_buffer: Buffer,
     pub(crate) node_children_buffer: Buffer,
     pub(crate) node_mips_buffer: Buffer,
@@ -206,10 +269,6 @@ pub(crate) struct BoxTreeRenderDataResources {
     /// Only available in GPU, to eliminate needles redundancy
     pub(crate) voxels_buffer: Buffer,
     pub(crate) color_palette_buffer: Buffer,
-
-    // Staging buffers for data reads
-    pub(crate) readable_node_requests_buffer: Buffer,
-    pub(crate) readable_used_bits_buffer: Buffer,
     // }--
 }
 
@@ -217,20 +276,17 @@ pub(crate) struct BoxTreeRenderDataResources {
 #[derive(Default)]
 pub(crate) struct BrickUpdate<'a> {
     pub(crate) brick_index: usize,
-    pub(crate) data: Option<&'a [PaletteIndexValues]>,
+    pub(crate) data: &'a [PaletteIndexValues],
 }
 
 /// An update generated by a request to insert a node, brick or MIP
 #[derive(Default)]
 pub(crate) struct CacheUpdatePackage<'a> {
     /// The bricks updated during the request
-    pub(crate) brick_updates: Vec<BrickUpdate<'a>>,
+    pub(crate) brick_update: Option<BrickUpdate<'a>>,
 
     /// The list of modified nodes during the operation
     pub(crate) modified_nodes: Vec<usize>,
-
-    /// Used bits updated for both bricks and nodes inside the render data cache
-    pub(crate) modified_usage_range: Range<usize>,
 }
 
 #[derive(Debug, Clone, TypePath)]
@@ -242,16 +298,6 @@ pub struct BoxTreeRenderData {
     /// Contains the properties of the Octree
     pub(crate) boxtree_meta: BoxTreeMetaData,
 
-    /// Usage information for nodes and bricks
-    ///  _===============================================================_
-    /// |    bit 0 | 1 if node is used by raytracing algo*               |
-    /// |----------------------------------------------------------------|
-    /// | bit 1-30 | 30x 1 bit: 1 if brick used by the raytracing algo   |
-    /// `================================================================`
-    /// * - Same bit used for node_children, node_ocbits, node_mips and node_structure
-    ///   - Root node doesn't use this bit, as it will never be overwritten by cache
-    pub(crate) used_bits: Vec<u32>,
-
     /// Node Property descriptors
     ///  _===============================================================_
     /// | Byte 0   | 8x 1 bit: 1 in case node is a leaf                  |
@@ -260,7 +306,7 @@ pub struct BoxTreeRenderData {
     /// |----------------------------------------------------------------|
     /// | Byte 2   | 8x 1 bit: 1 if node has MIP                         |
     /// |----------------------------------------------------------------|
-    /// | Byte 3   | unused - potentially: normal vector index           |
+    /// | Byte 3   | unused                                              |
     /// `================================================================`
     pub(crate) node_metadata: Vec<u32>,
 
@@ -298,6 +344,13 @@ pub struct BoxTreeRenderData {
     /// Stores each unique color, it is references in @voxels
     /// and in @children_buffer as well( in case of solid bricks )
     pub(crate) color_palette: Vec<Vec4>,
+}
+
+pub struct RenderBevyPlugin<T = u32>
+where
+    T: Default + Clone + Eq + VoxelData + Send + Sync + 'static,
+{
+    pub(crate) dummy: std::marker::PhantomData<T>,
 }
 
 pub(crate) const VHX_PREPASS_STAGE_ID: u32 = 0x01;

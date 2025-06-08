@@ -158,10 +158,12 @@ pub(crate) fn handle_camera_update(
             .single_mut()
             .expect("Expected PanOrbitCamera to be available in ECS!");
 
-        if let Some(_) = cam.radius {
+        if cam.radius.is_some() {
             let mut tree_view = viewset.view_mut(0).unwrap();
-            tree_view.spyglass.viewport_mut().origin =
-                V3c::new(cam.focus.x, cam.focus.y, cam.focus.z);
+            tree_view
+                .spyglass
+                .viewport_mut()
+                .set_viewport_origin(V3c::new(cam.focus.x, cam.focus.y, cam.focus.z));
             tree_view.spyglass.viewport_mut().direction = direction_from_cam(&cam).unwrap();
         }
 
@@ -385,7 +387,7 @@ pub(crate) fn handle_settings_update(
         view_distance_text.0 = pkv
             .get::<String>("view_distance")
             .ok()
-            .unwrap_or_else(|| "1024".to_string());
+            .unwrap_or_else(|| "512".to_string());
 
         let fov_bar_percentage =
             (ui_state.fov_value - fov_ui_action.boundaries[0]) as f32 / fov_bar_value_extent;
@@ -451,7 +453,7 @@ pub(crate) fn handle_settings_update(
         pkv.set("viewport_resolution_height", &"100")
             .expect("Failed to store value: output_resolution_height");
         pkv.set("fov", &"50").expect("Failed to store value: fov");
-        pkv.set("view_distance", &"1024")
+        pkv.set("view_distance", &"512")
             .expect("Failed to store value: view_distance");
         pkv.set("output_resolution_linked", &true.to_string())
             .expect("Expected to be able to store setting output_resolution_linked!");
@@ -460,7 +462,7 @@ pub(crate) fn handle_settings_update(
 
         ui_state.output_resolution = [1920, 1080];
         ui_state.viewport_resolution = [100, 100];
-        ui_state.view_distance = 1024;
+        ui_state.view_distance = 512;
         ui_state.fov_value = 50;
         ui_state.output_resolution_linked = true;
         ui_state.viewport_resolution_linked = true;
@@ -471,7 +473,7 @@ pub(crate) fn handle_settings_update(
         output_height_text.0 = "1080".to_string();
         viewport_width_text.0 = "100".to_string();
         viewport_height_text.0 = "100".to_string();
-        view_distance_text.0 = "1024".to_string();
+        view_distance_text.0 = "512".to_string();
 
         debug_assert_eq!(2, resolutions_linked.iter().count());
         for (mut resolution_sprite, _, _) in resolutions_linked.iter_mut() {

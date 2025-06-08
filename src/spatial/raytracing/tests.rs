@@ -1,4 +1,29 @@
 #[cfg(test)]
+mod brick_tests {
+    use crate::{boxtree::V3c, spatial::Cube};
+
+    #[test]
+    fn test_brick_slot_creation() {
+        const BRICK_DIM: u32 = 32;
+        let brick_slot = Cube::brick_slot_for(&V3c::new(0., 0., 0.), BRICK_DIM);
+        assert_eq!(brick_slot.size, BRICK_DIM as f32);
+        assert_eq!(brick_slot.min_position, V3c::new(0., 0., 0.));
+
+        let brick_slot = Cube::brick_slot_for(&V3c::new(3., 5., 12.), BRICK_DIM);
+        assert_eq!(brick_slot.size, BRICK_DIM as f32);
+        assert_eq!(brick_slot.min_position, V3c::new(0., 0., 0.));
+
+        let brick_slot = Cube::brick_slot_for(&V3c::new(0., 5., 31.), BRICK_DIM);
+        assert_eq!(brick_slot.size, BRICK_DIM as f32);
+        assert_eq!(brick_slot.min_position, V3c::new(0., 0., 0.));
+
+        let brick_slot = Cube::brick_slot_for(&V3c::new(16., 5., 32.), BRICK_DIM);
+        assert_eq!(brick_slot.size, BRICK_DIM as f32);
+        assert_eq!(brick_slot.min_position, V3c::new(0., 0., 32.));
+    }
+}
+
+#[cfg(test)]
 mod raytracing_tests {
     use crate::spatial::{
         math::offset_sectant, raytracing::plane_line_intersection, raytracing::Ray, Cube, V3c,

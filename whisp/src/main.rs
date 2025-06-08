@@ -74,6 +74,7 @@ fn main() {
 
 fn init_preferences_cache() -> PkvStore {
     let mut pkv = PkvStore::new("MinistryOfVoxelAffairs", "Whisp");
+
     if pkv.get::<CameraPosition>("camera_position").is_err() {
         pkv.set("CameraPosition", &CameraPosition::default())
             .expect("Failed to store default value: camera_position");
@@ -103,7 +104,7 @@ fn init_preferences_cache() -> PkvStore {
             .expect("Failed to store default value: viewport_resolution_height");
     }
     if pkv.get::<String>("view_distance").is_err() {
-        pkv.set("view_distance", &"1024")
+        pkv.set("view_distance", &"512")
             .expect("Failed to store default value: view_distance");
     }
     if pkv.get::<String>("ui_hidden").is_err() {
