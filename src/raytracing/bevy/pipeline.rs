@@ -19,7 +19,8 @@ use bevy::{
         render_graph::{self},
         render_resource::{
             encase::{StorageBuffer, UniformBuffer},
-            CachedPipelineState, ComputePassDescriptor, ComputePipelineDescriptor, PipelineCache,
+            CachedPipelineState, CommandEncoderDescriptor, ComputePassDescriptor,
+            ComputePipelineDescriptor, PipelineCache,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -239,6 +240,7 @@ fn create_view_resources(
 pub(crate) fn prepare_bind_groups(
     gpu_images: Res<RenderAssets<GpuImage>>,
     render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
     mut pipeline: Option<ResMut<VhxRenderPipeline>>,
     mut viewset: Option<ResMut<VhxViewSet>>,
 ) {
@@ -248,7 +250,7 @@ pub(crate) fn prepare_bind_groups(
         };
 
         // Refresh view because of texture updates
-        if view.rebuild && view.resources.is_some() && view.new_images_ready {
+        if view.rebuild && view.resources.is_some() && view.new_images_ready && !view.resize {
             let (spyglass_bind_group, viewport_buffer) =
                 create_spyglass_bind_group(pipeline, &render_device, &view);
 
@@ -269,66 +271,130 @@ pub(crate) fn prepare_bind_groups(
             return;
         }
 
-        if !view.new_images_ready || (!view.rebuild && view.resources.is_some()) {
+        if !view.new_images_ready || (!view.rebuild && !view.resize && view.resources.is_some()) {
             return; // Can't or won't rebuild the pipeline
         }
 
-        // build everything from the ground up
-        if let Some(resources) = view.resources.as_ref() {
-            let render_data = &view.data_handler.render_data;
+        let Some(resources) = view.resources.as_ref() else {
+            // build everything from the ground up if no resources are available
+            view.resources = Some(create_view_resources(
+                pipeline,
+                render_device,
+                gpu_images,
+                &view,
+            ));
+            view.rebuild = false;
+            return;
+        };
 
-            let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-            buffer.write(&render_data.boxtree_meta).unwrap();
-            pipeline.render_queue.write_buffer(
-                &resources.boxtree_meta_buffer,
-                0,
-                &buffer.into_inner(),
+        // Re-create buffers for the larger data requirements, move the data there
+        if view.resize {
+            // Re-create resources
+            let mut command_encoder =
+                render_device.create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("VhxBufferMoverOnResize"),
+                });
+            let new_resources = create_view_resources(pipeline, render_device, gpu_images, &view);
+
+            // Node data is built up from host again, because:
+            // 1. resize request is triggered by a failed allocation
+            // 2. a failed allocation also interrupts gpu updates
+            //   --> As insufficient space doesn't let node data to be uploaded to GPU buffers
+            // 3. because the gpu updates have been interrupted, the data may not be in sync at the point of interruption
+            // 4. node data does not count as significant, e.g. an area of 1024^3 can more or less be covered by 50 nodes
+            //   --> That's a magnitude of a few kilobytes at worst, so the runtime penalty is acceptable as of this commit
+            debug_assert!(
+                resources.node_metadata_buffer.size() <= new_resources.node_metadata_buffer.size(),
+                "Expected resized metadata buffer size >= than old buffer size"
+            );
+            debug_assert!(
+                resources.node_children_buffer.size() <= new_resources.node_children_buffer.size(),
+                "Expected resized node_children_buffer buffer size >= than old buffer size"
+            );
+            debug_assert!(
+                resources.node_mips_buffer.size() <= new_resources.node_mips_buffer.size(),
+                "Expected resized node_mips_buffer buffer size >= than old buffer size"
+            );
+            debug_assert!(
+                resources.node_ocbits_buffer.size() <= new_resources.node_ocbits_buffer.size(),
+                "Expected resized node_ocbits_buffer buffer size >= than old buffer size"
+            );
+            debug_assert!(
+                resources.voxels_buffer.size() <= new_resources.voxels_buffer.size(),
+                "Expected resized voxels_buffer buffer size >= than old buffer size"
+            );
+            debug_assert!(
+                resources.color_palette_buffer.size() <= new_resources.color_palette_buffer.size(),
+                "Expected resized voxels_buffer buffer size >= than old buffer size"
             );
 
-            let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-            buffer.write(&render_data.node_metadata).unwrap();
-            pipeline.render_queue.write_buffer(
-                &resources.node_metadata_buffer,
+            // Copy the voxel and color palette data to their new buffers
+            command_encoder.copy_buffer_to_buffer(
+                &resources.voxels_buffer,
                 0,
-                &buffer.into_inner(),
-            );
-
-            let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-            buffer.write(&render_data.node_children).unwrap();
-            pipeline.render_queue.write_buffer(
-                &resources.node_children_buffer,
+                &new_resources.voxels_buffer,
                 0,
-                &buffer.into_inner(),
+                resources.voxels_buffer.size(),
             );
-
-            let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-            buffer.write(&render_data.node_mips).unwrap();
-            pipeline.render_queue.write_buffer(
-                &resources.node_mips_buffer,
-                0,
-                &buffer.into_inner(),
-            );
-
-            let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-            buffer.write(&render_data.node_ocbits).unwrap();
-            pipeline.render_queue.write_buffer(
-                &resources.node_ocbits_buffer,
-                0,
-                &buffer.into_inner(),
-            );
-
-            let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-            buffer.write(&render_data.color_palette).unwrap();
-            pipeline.render_queue.write_buffer(
+            command_encoder.copy_buffer_to_buffer(
                 &resources.color_palette_buffer,
                 0,
-                &buffer.into_inner(),
-            )
-        } else {
-            let view_resources = create_view_resources(pipeline, render_device, gpu_images, &view);
-            view.resources = Some(view_resources);
+                &new_resources.color_palette_buffer,
+                0,
+                resources.color_palette_buffer.size(),
+            );
+
+            render_queue.submit([command_encoder.finish()].into_iter());
+
+            view.resources = Some(new_resources);
+            view.resize = false;
+            return;
         }
 
+        // Just re-populate buffer data and update available resources
+        let render_data = &view.data_handler.render_data;
+
+        let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+        buffer.write(&render_data.boxtree_meta).unwrap();
+        pipeline
+            .render_queue
+            .write_buffer(&resources.boxtree_meta_buffer, 0, &buffer.into_inner());
+
+        let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+        buffer.write(&render_data.node_metadata).unwrap();
+        pipeline.render_queue.write_buffer(
+            &resources.node_metadata_buffer,
+            0,
+            &buffer.into_inner(),
+        );
+
+        let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+        buffer.write(&render_data.node_children).unwrap();
+        pipeline.render_queue.write_buffer(
+            &resources.node_children_buffer,
+            0,
+            &buffer.into_inner(),
+        );
+
+        let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+        buffer.write(&render_data.node_mips).unwrap();
+        pipeline
+            .render_queue
+            .write_buffer(&resources.node_mips_buffer, 0, &buffer.into_inner());
+
+        let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+        buffer.write(&render_data.node_ocbits).unwrap();
+        pipeline
+            .render_queue
+            .write_buffer(&resources.node_ocbits_buffer, 0, &buffer.into_inner());
+
+        let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+        buffer.write(&render_data.color_palette).unwrap();
+        pipeline.render_queue.write_buffer(
+            &resources.color_palette_buffer,
+            0,
+            &buffer.into_inner(),
+        );
         view.rebuild = false;
     }
 }

@@ -400,7 +400,7 @@ pub(crate) fn create_tree_bind_group(
     let node_children_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Node Children Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let mut buffer = StorageBuffer::new(Vec::<u8>::new());
@@ -408,7 +408,7 @@ pub(crate) fn create_tree_bind_group(
     let node_mips_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Node MIPs Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let mut buffer = StorageBuffer::new(Vec::<u8>::new());
@@ -416,18 +416,16 @@ pub(crate) fn create_tree_bind_group(
     let node_ocbits_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Node Occupied Bits Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let brick_size = (render_data.boxtree_meta.tree_properties & 0x0000FFFF).pow(3) as u64;
-    let brick_count = (tree_view.data_handler.upload_targets.brick_positions.len()) as u64;
     let one_voxel_byte_size = std::mem::size_of::<PaletteIndexValues>() as u64;
-
     let voxels_buffer = render_device.create_buffer(&BufferDescriptor {
         mapped_at_creation: false,
-        size: one_voxel_byte_size * brick_size * brick_count,
+        size: one_voxel_byte_size * brick_size * tree_view.data_handler.bricks_in_view as u64,
         label: Some("BoxTree Voxels Buffer"),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let mut buffer = StorageBuffer::new(Vec::<u8>::new());
@@ -435,7 +433,7 @@ pub(crate) fn create_tree_bind_group(
     let color_palette_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Color Palette Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     (
