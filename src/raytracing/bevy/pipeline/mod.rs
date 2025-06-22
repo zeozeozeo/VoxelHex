@@ -1,5 +1,7 @@
+mod bind_groups;
+
 use crate::raytracing::bevy::{
-    bind_groups::{
+    pipeline::bind_groups::{
         create_bind_group_layouts, create_spyglass_bind_group, create_stage_bind_groups,
         create_tree_bind_group,
     },
@@ -38,7 +40,7 @@ impl FromWorld for VhxRenderPipeline {
         ) = create_bind_group_layouts(render_device);
         let shader = world.resource::<AssetServer>().add_async(async move {
             Ok::<Shader, AssetLoadError>(Shader::from_wgsl(
-                include_str!("viewport_render.wgsl"),
+                include_str!("../viewport_render.wgsl"),
                 file!(),
             ))
         });
