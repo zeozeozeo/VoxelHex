@@ -118,11 +118,6 @@ impl BoxTreeGPUDataHandler {
                 meta_array[node_index / 8] |= 0x01 << (8 + (node_index % 8));
             }
         };
-
-        // set node MIP properties
-        if let BrickData::Solid(_) | BrickData::Parted(_) = tree.node_mips[node_key] {
-            meta_array[node_index / 8] |= 0x01 << (16 + (node_index % 8));
-        }
     }
 
     //##############################################################################
@@ -234,7 +229,6 @@ impl BoxTreeGPUDataHandler {
                             .remove_by_left(&(child_mip as usize));
                     }
                 }
-
                 modified_nodes.push(child_descriptor);
             }
             NodeContent::UniformLeaf(_) | NodeContent::Leaf(_) => {
@@ -377,7 +371,6 @@ impl BoxTreeGPUDataHandler {
                 || BoxTree::<T>::ROOT_NODE_KEY == node_key as u32,
             "Trying to add already available node twice!"
         );
-
         let (node_index, robbed_parent) = if BoxTree::<T>::ROOT_NODE_KEY == node_key as u32 {
             (0, None)
         } else {
@@ -544,7 +537,6 @@ impl BoxTreeGPUDataHandler {
                 }
             }
         };
-
         (node_index, modifications)
     }
 
@@ -592,12 +584,26 @@ impl BoxTreeGPUDataHandler {
                     break;
                 }
                 BrickOwnedBy::NodeAsMIP(node_key) => {
-                    // in case the node is not inside the node upload list, MIP can be erased
-                    if !self
+                    debug_assert!(self
                         .upload_targets
-                        .nodes_to_see
-                        .contains(&(node_key as usize))
+                        .node_key_vs_meta_index
+                        .contains_left(&(node_key as usize)));
+                    if
+                        // in case the node is not inside the node upload list
+                        !self.upload_targets.nodes_to_see.contains(&(node_key as usize))
+                        // and the node have no children as bricks
+                        && self.render_data.node_children.iter()
+                            .skip(
+                                self.upload_targets
+                                    .node_key_vs_meta_index
+                                    .get_by_left(&(node_key as usize))
+                                    .expect("Expected node_key in brick ownership to be available inside the GPU")
+                                    * BOX_NODE_CHILDREN_COUNT,
+                            )
+                            .take(BOX_NODE_CHILDREN_COUNT)
+                            .all(|v| *v == empty_marker::<u32>())
                     {
+                       // MIP can be discarded
                         priority_victim = Some(victim_brick_index);
                         break;
                     }
@@ -659,7 +665,6 @@ impl BoxTreeGPUDataHandler {
                             .contains(&(node_key as usize))
                         {
                             *victim_brick = (victim_brick_index + 1) % (self.bricks_in_view);
-
                             return Some(victim_brick_index);
                         }
                     }

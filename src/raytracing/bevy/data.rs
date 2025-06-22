@@ -26,7 +26,7 @@ use bevy::{
             encase::{internal::WriteInto, UniformBuffer},
             Buffer, ShaderSize,
         },
-        renderer::{RenderDevice, RenderQueue},
+        renderer::RenderQueue,
     },
 };
 use bimap::BiHashMap;
@@ -310,6 +310,9 @@ pub(crate) fn handle_upload_queue_changes<
                 while data_handler.upload_state.node_upload_progress
                     < data_handler.upload_targets.node_upload_queue.len()
                 {
+                    let node_upload_request = data_handler.upload_targets.node_upload_queue
+                        [data_handler.upload_state.node_upload_progress]
+                        .clone();
 
                     if let Some(node_meta_index) = data_handler
                         .upload_targets
@@ -388,13 +391,11 @@ pub(crate) fn handle_upload_queue_changes<
                 }
             }
 
-
             // Handle brick uploads
             if data_handler.upload_state.brick_upload_progress
                 == data_handler.upload_targets.brick_upload_queue.len()
             {
                 break 'uploading_buffers; // All bricks are already uploaded
-
             }
             for _ in 0..data_handler.brick_uploads_per_frame {
                 debug_assert!(
@@ -463,7 +464,6 @@ pub(crate) fn handle_upload_queue_changes<
             }
         }
     }
-
 
     if view.resources.is_none() {
         return; // Can't write to buffers as there are not created
@@ -537,17 +537,17 @@ pub(crate) fn handle_upload_queue_changes<
     let mut node_children_updated = usize::MAX..0;
     let mut node_mips_updated = usize::MAX..0; // Any brick upload could invalidate node_mips values
     for cache_update in updates.into_iter() {
-        for meta_index in cache_update.modified_nodes {
-            node_meta_updated.start = node_meta_updated.start.min(meta_index / 8);
-            node_meta_updated.end = node_meta_updated.end.max(meta_index / 8 + 1);
-            node_mips_updated.start = node_mips_updated.start.min(meta_index);
-            node_mips_updated.end = node_mips_updated.end.max(meta_index + 1);
+        for node_index in cache_update.modified_nodes {
+            node_meta_updated.start = node_meta_updated.start.min(node_index / 8);
+            node_meta_updated.end = node_meta_updated.end.max(node_index / 8 + 1);
+            node_mips_updated.start = node_mips_updated.start.min(node_index);
+            node_mips_updated.end = node_mips_updated.end.max(node_index + 1);
             node_children_updated.start = node_children_updated
                 .start
-                .min(meta_index * BOX_NODE_CHILDREN_COUNT);
+                .min(node_index * BOX_NODE_CHILDREN_COUNT);
             node_children_updated.end = node_children_updated
                 .end
-                .max(meta_index * BOX_NODE_CHILDREN_COUNT + BOX_NODE_CHILDREN_COUNT);
+                .max(node_index * BOX_NODE_CHILDREN_COUNT + BOX_NODE_CHILDREN_COUNT);
         }
 
         // Upload Voxel data
@@ -569,7 +569,6 @@ pub(crate) fn handle_upload_queue_changes<
             }
         }
     }
-
 
     write_range_to_buffer(
         &view.data_handler.render_data.node_metadata,
@@ -682,7 +681,6 @@ pub(crate) fn re_evaluate_view_size(view: &mut BoxTreeGPUView) {
             .resize(new_brick_count, V3c::default());
     }
 
-
     debug_assert!(
         rebuild_nodes || rebuild_bricks,
         "Expected view to be too small while calling size evaluation!",
@@ -739,14 +737,15 @@ pub(crate) fn rebuild_upload_queues<
     // Decide the level boundaries to work within
     let max_mip_level = (tree.boxtree_size as f32 / tree.brick_dim as f32)
         .log(4.)
-        .ceil() as i32;
+        .ceil() as u32;
     let deepest_mip_level_to_upload = ((viewport_bl_ - viewport_bl).length() / view_distance)
         .ceil()
-        .min(max_mip_level as f32) as i32;
+        .min(max_mip_level as f32) as u32;
 
     // Look for the smallest node covering the entirety of the viewing distance
-    let mut center_node_parent_key = None;
+    let mut center_node_parent = None;
     let mut node_bounds = Cube::root_bounds(tree.boxtree_size as f32);
+    let mut node_mip_level = max_mip_level;
     let mut node_stack = vec![NodeUploadRequest {
         node_key: BoxTree::<T>::ROOT_NODE_KEY as usize,
         parent_key: BoxTree::<T>::ROOT_NODE_KEY as usize,
@@ -772,13 +771,15 @@ pub(crate) fn rebuild_upload_queues<
 
         // There is a valid child at the given position inside the node, recurse into it
         if tree.nodes.key_is_valid(child_key_at_position as usize) {
-            center_node_parent_key = Some((node_key, node_bounds));
+            debug_assert!(node_mip_level >= 1);
+            center_node_parent = Some((node_key, node_bounds, node_mip_level));
             node_stack.push(NodeUploadRequest {
                 node_key: child_key_at_position,
                 parent_key: node_key,
                 sectant: child_sectant_at_position,
             });
             node_bounds = Cube::child_bounds_for(&node_bounds, child_sectant_at_position);
+            node_mip_level -= 1;
         } else {
             break;
         }
@@ -798,22 +799,12 @@ pub(crate) fn rebuild_upload_queues<
 
     // add center node together with children inside the viewport into the queue
     add_children_to_upload_queue(
-        (center_node_key, node_bounds),
+        center_node_parent.unwrap_or((center_node_key, node_bounds, node_mip_level)),
         tree,
-        &V3c::from(viewport_bl),
+        &viewport_center,
         view_distance,
         upload_targets,
-        max_mip_level - deepest_mip_level_to_upload + 1,
-    );
-    // add center node direct siblings into upload queue
-    let extended_range_modifier = 0.5;
-    add_children_to_upload_queue(
-        center_node_parent_key.unwrap_or((center_node_key, node_bounds)),
-        tree,
-        &V3c::from(viewport_bl - V3c::unit(view_distance * -extended_range_modifier)),
-        view_distance * extended_range_modifier,
-        upload_targets,
-        1,
+        deepest_mip_level_to_upload,
     );
 }
 
@@ -834,17 +825,17 @@ fn add_children_to_upload_queue<
     #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
     #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData + Send + Sync + 'static,
 >(
-    (node_key, node_bounds): (usize, Cube),
+    (node_key, node_bounds, node_mip_level): (usize, Cube, u32),
     tree: &BoxTree<T>,
-    viewport_bl: &V3c<u32>,
+    viewport_center: &V3c<f32>,
     view_distance: f32,
     upload_targets: &mut UploadQueueTargets,
-    depth_left: i32,
+    min_mip_level: u32,
 ) {
-    if depth_left <= 0 {
+    debug_assert!(min_mip_level >= 1);
+    if node_mip_level < min_mip_level {
         return;
     }
-
 
     let viewport_contains_target_fn = |viewport_bl: &V3c<u32>,
                                        view_distance: f32,
@@ -863,6 +854,12 @@ fn add_children_to_upload_queue<
         upload_targets.nodes_to_see.contains(&node_key),
         "Expected node to be already included in the upload queue"
     );
+
+    // the view distance has to be used for brick inclusion, but MIP should have
+    // an extended inclusion range.
+    let current_include_distance =
+        view_distance * (BOX_NODE_DIMENSION as f32).powf(node_mip_level as f32 - 1.);
+    let current_bl = V3c::from(*viewport_center - V3c::unit(current_include_distance / 2.));
     match tree.nodes.get(node_key) {
         NodeContent::Nothing => {}
         NodeContent::UniformLeaf(brick) => {
@@ -874,8 +871,8 @@ fn add_children_to_upload_queue<
                 BrickData::Parted(_brick) => {
                     let brick_ownership = BrickOwnedBy::NodeAsChild(node_key as u32, 0);
                     if viewport_contains_target_fn(
-                        viewport_bl,
-                        view_distance,
+                        &current_bl,
+                        current_include_distance,
                         &V3c::from(node_bounds.min_position),
                         &V3c::unit(node_bounds.size as u32),
                     ) && upload_targets
@@ -894,8 +891,8 @@ fn add_children_to_upload_queue<
         NodeContent::Leaf(bricks) => {
             execute_for_relevant_sectants(
                 &node_bounds,
-                viewport_bl,
-                view_distance as u32,
+                &current_bl,
+                current_include_distance as u32,
                 |position_in_target,
                  update_size_in_target,
                  target_child_sectant,
@@ -908,9 +905,10 @@ fn add_children_to_upload_queue<
                         BrickData::Parted(_brick) => {
                             let brick_ownership =
                                 BrickOwnedBy::NodeAsChild(node_key as u32, target_child_sectant);
+
                             if viewport_contains_target_fn(
-                                viewport_bl,
-                                view_distance,
+                                &current_bl,
+                                current_include_distance,
                                 &position_in_target,
                                 &update_size_in_target,
                             ) && upload_targets
@@ -931,16 +929,16 @@ fn add_children_to_upload_queue<
         NodeContent::Internal(_ocbits) => {
             execute_for_relevant_sectants(
                 &node_bounds,
-                viewport_bl,
-                view_distance as u32,
+                &current_bl,
+                current_include_distance as u32,
                 |position_in_target,
                  update_size_in_target,
                  target_child_sectant,
                  &target_bounds| {
                     if let Some(child_key) = tree.valid_child_for(node_key, target_child_sectant) {
                         if viewport_contains_target_fn(
-                            viewport_bl,
-                            view_distance,
+                            &current_bl,
+                            current_include_distance,
                             &position_in_target,
                             &update_size_in_target,
                         ) {
@@ -951,12 +949,12 @@ fn add_children_to_upload_queue<
                             });
                             upload_targets.nodes_to_see.insert(child_key);
                             add_children_to_upload_queue(
-                                (child_key, target_bounds),
+                                (child_key, target_bounds, node_mip_level - 1),
                                 tree,
-                                &viewport_bl,
+                                viewport_center,
                                 view_distance,
                                 upload_targets,
-                                depth_left - 1,
+                                min_mip_level,
                             );
                         }
                     }
@@ -964,58 +962,6 @@ fn add_children_to_upload_queue<
             );
         }
     }
-}
-
-//##############################################################################
-//    █████████  ███████████  █████  █████
-//   ███░░░░░███░░███░░░░░███░░███  ░░███
-//  ███     ░░░  ░███    ░███ ░███   ░███
-// ░███          ░██████████  ░███   ░███
-// ░███    █████ ░███░░░░░░   ░███   ░███
-// ░░███  ░░███  ░███         ░███   ░███
-//  ░░█████████  █████        ░░████████
-//   ░░░░░░░░░  ░░░░░          ░░░░░░░░
-//  ███████████   ██████████   █████████   ██████████
-// ░░███░░░░░███ ░░███░░░░░█  ███░░░░░███ ░░███░░░░███
-//  ░███    ░███  ░███  █ ░  ░███    ░███  ░███   ░░███
-//  ░██████████   ░██████    ░███████████  ░███    ░███
-//  ░███░░░░░███  ░███░░█    ░███░░░░░███  ░███    ░███
-//  ░███    ░███  ░███ ░   █ ░███    ░███  ░███    ███
-//  █████   █████ ██████████ █████   █████ ██████████
-// ░░░░░   ░░░░░ ░░░░░░░░░░ ░░░░░   ░░░░░ ░░░░░░░░░░
-//##############################################################################
-fn read_buffer(
-    render_device: &RenderDevice,
-    buffer: &Buffer,
-    index_range: std::ops::Range<usize>,
-    target: &mut Vec<u32>,
-) {
-    let byte_start = (index_range.start * std::mem::size_of::<u32>()) as u64;
-    let byte_end = (index_range.end * std::mem::size_of::<u32>()) as u64;
-    let metadata_buffer_slice = buffer.slice(byte_start..byte_end);
-    let (s, metadata_recv) = crossbeam::channel::unbounded::<()>();
-    metadata_buffer_slice.map_async(
-        bevy::render::render_resource::MapMode::Read,
-        move |d| match d {
-            Ok(_) => s.send(()).expect("Failed to send map update"),
-            Err(err) => panic!("Couldn't map buffer!: {err}"),
-        },
-    );
-
-    render_device
-        .poll(bevy::render::render_resource::Maintain::wait())
-        .panic_on_timeout();
-    metadata_recv
-        .recv()
-        .expect("Failed to receive the map_async message");
-    {
-        let buffer_view = metadata_buffer_slice.get_mapped_range();
-        *target = buffer_view
-            .chunks(std::mem::size_of::<u32>())
-            .map(|chunk| u32::from_ne_bytes(chunk.try_into().expect("should be a u32")))
-            .collect::<Vec<u32>>();
-    }
-    buffer.unmap();
 }
 
 //##############################################################################

@@ -422,10 +422,7 @@ fn probe_MIP(
     direction_lut_index: u32,
     max_distance: f32
 ) -> OctreeRayIntersection {
-    if( // there is a valid mip present
-        0 != (node_metadata[node_key / 8] & (16 + (node_key % 8))) // node has MIP
-        && node_mips[node_key] != EMPTY_MARKER // which is uploaded
-    ) {
+    if(node_mips[node_key] != EMPTY_MARKER) { // there is a valid mip present
         if(0 != (node_mips[node_key] & 0x80000000)) { // MIP brick is solid
             // Whole brick is solid, ray hits it at first connection
             return OctreeRayIntersection(
@@ -603,12 +600,8 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
             var target_child_descriptor = node_children[(current_node_key * BOX_NODE_CHILDREN_COUNT) + target_sectant];
             if(
                 (0 != (boxtree_meta_data.tree_properties & 0x00010000)) // MIPs enabled
-                // the node has a MIP
-                &&( 0 != (node_metadata[current_node_key / 8] & (0x01u << (16 + (current_node_key % 8u)))) )
-
-                // In case node doesn't have the target child node uploaded to GPU
-                && target_sectant != OOB_SECTANT
-                && target_child_descriptor == EMPTY_MARKER
+                && target_sectant != OOB_SECTANT // node has a target poitning inwards
+                && target_child_descriptor == EMPTY_MARKER // node doesn't have target child uploaded
                 && (( // node is occupied at target sectant
                     (target_sectant < 32)
                     && (0u != (node_occupied_bits[current_node_key * 2] & (0x01u << target_sectant) ))
@@ -627,9 +620,12 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                     return mip_hit;
                 }
             }
-            if( // node is leaf, its target points inside and is available
+            if( // node target points inside and is available
                 target_sectant != OOB_SECTANT
                 && target_child_descriptor != EMPTY_MARKER
+
+                // node is a leaf
+                &&( 0 != (node_metadata[current_node_key / 8] & (0x01u << (current_node_key % 8u))) )
                 && (( // node is occupied at target sectant
                     (target_sectant < 32)
                     && (0u != (node_occupied_bits[current_node_key * 2] & (0x01u << target_sectant) ))
@@ -637,7 +633,6 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                     (target_sectant >= 32)
                     && (0u != (node_occupied_bits[current_node_key * 2 + 1] & (0x01u << (target_sectant - 32)) ))
                 ))
-                &&( 0 != (node_metadata[current_node_key / 8] & (0x01u << (current_node_key % 8u))) )
             ){
                 var hit: OctreeRayIntersection;
                 if ( 0 != (node_metadata[current_node_key / 8] & (0x01u << (8 + (current_node_key % 8u)))) ) {
@@ -787,8 +782,8 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                     }
                     if (
                         target_sectant == OOB_SECTANT // target is out of bounds
-                        ||( // current node is available
-                            (( // and current node is occupied at target sectant
+                        ||( // current node is occupied at target sectant
+                            ((
                                 (target_sectant < 32)
                                 && ( 0u != (node_occupied_bits[current_node_key * 2] & (0x01u << target_sectant)) )
                             )||(
