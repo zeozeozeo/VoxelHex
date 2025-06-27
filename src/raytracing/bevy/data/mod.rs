@@ -69,7 +69,6 @@ pub(crate) fn re_evaluate_view_size(view: &mut BoxTreeGPUView) {
         render_data.node_mips.resize(new_node_count, empty_marker());
         render_data.node_ocbits.resize(new_node_count * 2, 0);
         view.data_handler.nodes_in_view = new_node_count;
-        view.data_handler.upload_state.victim_node.max_meta_len = new_node_count;
     }
 
     // Decide if there's enough space to host the required number of bricks

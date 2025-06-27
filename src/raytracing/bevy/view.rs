@@ -8,7 +8,7 @@ use crate::{
     raytracing::{
         bevy::{
             data::boxtree_properties,
-            types::{UploadQueueStatus, UploadQueueTargets, VictimPointer},
+            types::{UploadQueueStatus, UploadQueueTargets},
         },
         BoxTreeRenderData,
     },
@@ -26,7 +26,7 @@ use bevy::{
 };
 use bimap::BiHashMap;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     hash::Hash,
     sync::{Arc, RwLock},
 };
@@ -119,10 +119,11 @@ impl<
                 brick_ownership: BiHashMap::new(),
                 brick_positions: vec![V3c::unit(0.); bricks_in_view],
                 node_key_vs_meta_index: BiHashMap::new(),
+                node_index_vs_parent: HashMap::new(),
                 nodes_to_see: HashSet::new(),
             },
             upload_state: UploadQueueStatus {
-                victim_node: VictimPointer::new(nodes_in_view),
+                victim_node: 0,
                 victim_brick: 0,
                 node_upload_progress: 0,
                 brick_upload_progress: 0,

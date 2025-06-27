@@ -6,73 +6,11 @@ use crate::{
     object_pool::empty_marker,
     raytracing::bevy::types::{
         BoxTreeGPUDataHandler, BrickOwnedBy, BrickUpdate, BrickUploadRequest, CacheUpdatePackage,
-        NodeUploadRequest, VictimPointer,
+        NodeUploadRequest,
     },
 };
 use bendy::{decoding::FromBencode, encoding::ToBencode};
 use std::hash::Hash;
-
-//##############################################################################
-//  █████   █████ █████   █████████  ███████████ █████ ██████   ██████
-// ░░███   ░░███ ░░███   ███░░░░░███░█░░░███░░░█░░███ ░░██████ ██████
-//  ░███    ░███  ░███  ███     ░░░ ░   ░███  ░  ░███  ░███░█████░███
-//  ░███    ░███  ░███ ░███             ░███     ░███  ░███░░███ ░███
-//  ░░███   ███   ░███ ░███             ░███     ░███  ░███ ░░░  ░███
-//   ░░░█████░    ░███ ░░███     ███    ░███     ░███  ░███      ░███
-//     ░░███      █████ ░░█████████     █████    █████ █████     █████
-//      ░░░      ░░░░░   ░░░░░░░░░     ░░░░░    ░░░░░ ░░░░░     ░░░░░
-//  ███████████  ███████████ ███████████
-// ░░███░░░░░███░█░░░███░░░█░░███░░░░░███
-//  ░███    ░███░   ░███  ░  ░███    ░███
-//  ░██████████     ░███     ░██████████
-//  ░███░░░░░░      ░███     ░███░░░░░███
-//  ░███            ░███     ░███    ░███
-//  █████           █████    █████   █████
-// ░░░░░           ░░░░░    ░░░░░   ░░░░░
-//##############################################################################
-impl VictimPointer {
-    /// Returns true if no new nodes can be added without overwriting another
-    pub(crate) fn is_full(&self) -> bool {
-        self.max_meta_len <= self.stored_items
-    }
-
-    /// Creates object, based on the given cache length it should cover
-    pub(crate) fn new(max_meta_len: usize) -> Self {
-        Self {
-            max_meta_len,
-            loop_count: 0,
-            stored_items: 1,
-            meta_index: 1,
-            child: 0,
-        }
-    }
-
-    /// Steps the iterator forward to the next children, if available, or the next node.
-    /// Wraps around
-    pub(crate) fn step(&mut self) {
-        if self.child >= (BOX_NODE_CHILDREN_COUNT - 1) {
-            self.skip_node();
-        } else {
-            self.child += 1;
-        }
-    }
-
-    /// Steps the iterator forward one node
-    pub(crate) fn skip_node(&mut self) {
-        if self.meta_index == 0 {
-            self.loop_count += 1;
-            self.meta_index = self.max_meta_len - 1;
-        } else {
-            self.meta_index -= 1;
-        }
-        self.child = 0;
-    }
-
-    /// Provides the number of times the victim node pointer has started from the first element in the cache
-    pub(crate) fn get_loop_count(&self) -> usize {
-        self.loop_count
-    }
-}
 
 impl BoxTreeGPUDataHandler {
     //##############################################################################
@@ -188,8 +126,9 @@ impl BoxTreeGPUDataHandler {
             parent_key,
             meta_index
         );
-
-        // Erase child connection
+        self.upload_targets
+            .node_index_vs_parent
+            .remove(&child_descriptor);
         match tree.nodes.get(*parent_key) {
             NodeContent::Nothing => {
                 panic!("HOW DO I ERASE NOTHING. AMERICA EXPLAIN")
@@ -264,60 +203,36 @@ impl BoxTreeGPUDataHandler {
     /// Optionally the source where the child can be taken from
     /// May fail to provide index, in case insufficient space
     fn first_available_node(&mut self) -> Option<(usize, Option<(usize, u8)>)> {
-        let victim_node = &mut self.upload_state.victim_node;
-        // If there is space left in the cache, use it all up
-        if !victim_node.is_full() {
-            victim_node.meta_index = victim_node.stored_items;
-            victim_node.stored_items += 1;
-            return Some((victim_node.meta_index, None));
-        }
+        // Iterate the buffer until either a node is found or the victim node loops back to itself
+        let mut victim_node_index = (self.upload_state.victim_node + 1) % self.nodes_in_view;
+        while victim_node_index != self.upload_state.victim_node {
+            // query if the node key of the potential node victim
+            let victim_node_key = self
+                .upload_targets
+                .node_key_vs_meta_index
+                .get_by_right(&victim_node_index);
 
-        // look for the next internal node ( with node children )
-        let current_loop = victim_node.get_loop_count();
-        loop {
-            let child_offset = victim_node.meta_index * BOX_NODE_CHILDREN_COUNT + victim_node.child;
-            let child_meta_index = self.render_data.node_children[child_offset] as usize;
-
-            // child of non-leaf node at target is not empty, which means
-            // the target child might point to an internal node if it's valid
-            if 0 == (self.render_data.node_metadata[victim_node.meta_index / 8]
-                & (0x01 << (victim_node.meta_index % 8)))
-                && child_meta_index != empty_marker::<u32>() as usize
-            {
-                debug_assert!(
-                    child_meta_index < (self.render_data.node_metadata.len() as f32 / 8.).ceil() as usize,
-                    "Expected child[{:?}] of meta_node[{:?}]({:#10X}) to point inside index. Child: {:?}",
-                    victim_node.child,
-                    victim_node.meta_index,
-                    self.render_data.node_metadata[victim_node.meta_index / 8],
-                    child_meta_index
-                );
-                let victim_node_key = self
+            if victim_node_key.is_none()
+                || !self
                     .upload_targets
-                    .node_key_vs_meta_index
-                    .get_by_right(&victim_node.meta_index);
-
-                if victim_node_key.is_some()
-                    && !self
-                        .upload_targets
-                        .nodes_to_see
-                        .contains(victim_node_key.unwrap())
-                {
-                    // Victim node is stored within the GPU, but is not in the node upload queue
-                    // --> It can be overwritten!
-                    return Some((
-                        child_meta_index,
-                        Some((victim_node.meta_index, victim_node.child as u8)),
-                    ));
-                }
+                    .nodes_to_see
+                    .contains(victim_node_key.unwrap())
+            {
+                // Victim node is not in the node upload queue, it can be overwritten!
+                self.upload_state.victim_node = victim_node_index;
+                return Some((
+                    victim_node_index,
+                    self.upload_targets
+                        .node_index_vs_parent
+                        .get(&victim_node_index)
+                        .copied(),
+                ));
             }
-            victim_node.step();
 
-            if victim_node.get_loop_count() > current_loop + 2 {
-                // Potential infinite loop if no nodes found for deallocation
-                return None;
-            }
+            victim_node_index = (victim_node_index + 1) % self.nodes_in_view;
         }
+        // Unable to select a single node to overwrite
+        None
     }
 
     /// Writes most of the data of the given node to the first available index
@@ -466,6 +381,10 @@ impl BoxTreeGPUDataHandler {
             let parent_child_index = (parent_meta_index * BOX_NODE_CHILDREN_COUNT)
                 + node_upload_request.sectant as usize;
             self.render_data.node_children[parent_child_index] = node_index as u32;
+            self.upload_targets.node_index_vs_parent.insert(
+                node_index,
+                (*parent_meta_index, node_upload_request.sectant),
+            );
             modifications.modified_nodes.push(*parent_meta_index);
         }
 

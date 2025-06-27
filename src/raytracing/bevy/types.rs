@@ -19,7 +19,7 @@ use bevy::{
 };
 use bimap::BiHashMap;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     hash::Hash,
     sync::{Arc, RwLock},
 };
@@ -147,15 +147,6 @@ pub struct BoxTreeGPUView {
     pub(crate) brick_slot: Cube,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct VictimPointer {
-    pub(crate) max_meta_len: usize,
-    pub(crate) loop_count: usize,
-    pub(crate) stored_items: usize,
-    pub(crate) meta_index: usize,
-    pub(crate) child: usize,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum BrickOwnedBy {
     None,
@@ -194,6 +185,10 @@ pub(crate) struct UploadQueueTargets {
     /// Map to connect tree node keys to node meta indexes
     pub(crate) node_key_vs_meta_index: BiHashMap<usize, usize>,
 
+    /// Map to connect nodes index values inside the GPU to their parents
+    /// Mapping is as following: node_index -> (parent_index, child_sectant)
+    pub(crate) node_index_vs_parent: HashMap<usize, (usize, u8)>,
+
     /// A set containing all nodes which should be on the GPU
     pub(crate) nodes_to_see: HashSet<usize>,
 }
@@ -214,7 +209,7 @@ pub(crate) struct UploadQueueStatus {
 
     /// Index pointing inside GPU data where the search will start
     /// for the next node to be overwritten
-    pub(crate) victim_node: VictimPointer,
+    pub(crate) victim_node: usize,
 
     /// The number of colors uploaded to the GPU
     pub(crate) uploaded_color_palette_size: usize,
