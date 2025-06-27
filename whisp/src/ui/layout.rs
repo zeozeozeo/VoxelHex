@@ -547,7 +547,7 @@ pub(crate) fn setup(mut commands: Commands, asset_server: Res<AssetServer>, pkv:
                                 Text2d::new(
                                     pkv.get::<String>("view_distance")
                                         .ok()
-                                        .unwrap_or_else(|| "1024".to_string()),
+                                        .unwrap_or_else(|| "512".to_string()),
                                 ),
                                 OnHoverSetCursor::new(SystemCursorIcon::Pointer),
                             ));

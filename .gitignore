@@ -5,6 +5,7 @@
 *.svg
 perf.data*
 *junk*
+*JUNK*
 *.sublime-*
 *.cache_*
 *.tmp_cache_*

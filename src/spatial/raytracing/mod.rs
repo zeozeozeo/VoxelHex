@@ -1,4 +1,8 @@
-use crate::spatial::{lut::SECTANT_STEP_RESULT_LUT, math::vector::V3c, Cube};
+use crate::spatial::{
+    lut::SECTANT_STEP_RESULT_LUT,
+    math::vector::{V3c, V3cf32},
+    Cube,
+};
 
 mod tests;
 
@@ -56,6 +60,13 @@ impl Cube {
         Some(CubeRayIntersection {
             impact_distance: Some(tmin),
         })
+    }
+
+    pub(crate) fn brick_slot_for(position: &V3cf32, brick_dim: u32) -> Cube {
+        Cube {
+            min_position: *position - (*position % brick_dim as f32),
+            size: brick_dim as f32,
+        }
     }
 }
 

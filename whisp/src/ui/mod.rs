@@ -73,7 +73,7 @@ impl UiState {
                     .parse::<u32>()
                     .expect("Expected view_distance setting to be a parsable number")
             } else {
-                1024
+                512
             },
             output_resolution: [
                 if let Ok(res) = pkv.get::<String>("output_resolution_width") {

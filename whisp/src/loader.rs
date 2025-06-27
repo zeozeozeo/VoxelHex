@@ -222,7 +222,6 @@ pub(crate) fn handle_model_load_finished(
             viewset.clear();
             let view_index = host.create_new_view(
                 &mut viewset,
-                50,
                 voxelhex::raytracing::Viewport::new(
                     V3c::new(0., 10., 0.),
                     V3c::new(0., 0., 1.),

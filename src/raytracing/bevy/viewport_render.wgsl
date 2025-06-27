@@ -227,77 +227,6 @@ fn dda_step_to_next_sibling(
     return result;
 }
 
-// Unique to this implementation, not adapted from rust code
-/// Sets the used bit true for the given node
-fn set_node_used(node_key: u32) {
-    if 0 != (used_bits[node_key] & 0x01u) {
-        // no need to set if already true
-        return;
-    }
-
-    loop{
-        let exchange_result = atomicCompareExchangeWeak(
-            &used_bits[node_key], used_bits[node_key], used_bits[node_key] | 0x01u
-        );
-        if(exchange_result.exchanged || 0 < (exchange_result.old_value & 0x01u)){
-            break;
-        }
-    }
-}
-
-// Unique to this implementation, not adapted from rust code
-/// Sets the used bit true for the given brick
-fn set_brick_used(brick_index: u32) {
-    if 0 != ( used_bits[brick_index / 31] & (0x01u << (1u + (brick_index % 31u))) ) {
-        // no need to set if already true
-        return;
-    }
-
-    loop{
-        let exchange_result = atomicCompareExchangeWeak(
-            &used_bits[brick_index / 31],
-            used_bits[brick_index / 31],
-            used_bits[brick_index / 31] | (0x01u << (1u + (brick_index % 31u)))
-        );
-        if(
-            exchange_result.exchanged
-            || 0 != ( exchange_result.old_value & (0x01u << (1u + (brick_index % 31u))) )
-        ){
-            break;
-        }
-    }
-}
-
-// Unique to this implementation, not adapted from rust code
-/// Requests the child of the given node to be uploaded
-fn request_node(node_meta_index: u32, child_sectant: u32) -> bool {
-    if 0xFFFFFFFF != node_requests[arrayLength(&node_requests) - 1] {
-        // Node requests already full
-        return false;
-    }
-    var request_index = 0u;
-    loop{
-        let exchange_result = atomicCompareExchangeWeak(
-            &node_requests[request_index], EMPTY_MARKER,
-            (node_meta_index & 0x00FFFFFFu)|((child_sectant & 0x000000FF) << 24)
-        );
-        if(
-            exchange_result.exchanged 
-            ||(
-                exchange_result.old_value
-                == ((node_meta_index & 0x00FFFFFFu)|((child_sectant & 0x000000FF) << 24))
-            )
-        ) {
-            break;
-        }
-        request_index += 1u;
-        if(request_index >= arrayLength(&node_requests)) {
-            return false;
-        }
-    }
-    return true;
-}
-
 struct BrickHit{
     hit: bool,
     index: vec3u,
@@ -448,7 +377,6 @@ fn probe_brick(
                 cube_impact_normal(*brick_bounds, *ray_current_point)
             );
         } else { // brick is parted
-            set_brick_used(brick_descriptor & 0x0000FFFF);
             let leaf_brick_hit = traverse_brick(
                 ray, ray_current_point,
                 brick_descriptor & 0x0000FFFF,
@@ -494,25 +422,20 @@ fn probe_MIP(
     direction_lut_index: u32,
     max_distance: f32
 ) -> OctreeRayIntersection {
-    let brick_descriptor = node_mips[node_key];
-    if( // there is a valid mip present
-        0 != (node_metadata[node_key / 8] & (16 + (node_key % 8))) // node has MIP
-        && brick_descriptor != EMPTY_MARKER // which is uploaded
-    ) {
-        if(0 != (brick_descriptor & 0x80000000)) { // MIP brick is solid
+    if(node_mips[node_key] != EMPTY_MARKER) { // there is a valid mip present
+        if(0 != (node_mips[node_key] & 0x80000000)) { // MIP brick is solid
             // Whole brick is solid, ray hits it at first connection
             return OctreeRayIntersection(
                 true,
-                color_palette[brick_descriptor & 0x0000FFFF], // Albedo is in color_palette, it's not a brick index in this case
+                color_palette[node_mips[node_key] & 0x0000FFFF], // Albedo is in color_palette, it's not a brick index in this case
                 *ray_current_point,
                 cube_impact_normal((*node_bounds), *ray_current_point)
             );
         } else { // brick is parted
-            set_brick_used(brick_descriptor & 0x0000FFFF);
             var brick_point = *ray_current_point;
             let leaf_brick_hit = traverse_brick(
                 ray, &brick_point,
-                brick_descriptor & 0x0000FFFF,
+                node_mips[node_key] & 0x0000FFFF,
                 node_bounds, ray_scale_factors, direction_lut_index,
                 max_distance
             );
@@ -622,10 +545,6 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
     var target_bounds = current_bounds;
     var current_node_key = BOXTREE_ROOT_NODE_KEY;
     var target_sectant = OOB_SECTANT;
-    var missing_data_color = vec3f(0.);
-    var mip_level = log2( // log4 isn't available in WGSL
-        f32(boxtree_meta_data.boxtree_size / (boxtree_meta_data.tree_properties & 0x0000FFFF))
-    ) / 2.;
 
     let root_intersect = cube_intersect_ray(current_bounds, ray);
     if(root_intersect.hit){
@@ -678,42 +597,11 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                 return OctreeRayIntersection( false, vec4f(0.), ray_current_point, vec3f(0., 0., 1.) );
             }
 
-            if( // In case MIPs are enabled
-                (0 != (boxtree_meta_data.tree_properties & 0x00010000))
-                &&( // In case current node MIP level is smaller, than the required MIP level
-                    mip_level <
-                    ( // Note: Aligning to bound borders deemed undesriable artefacts
-                        length( // based on ray current travel distance
-                            viewport.origin - ( // aligned to nearest cube edges(based on current MIP level)
-                                round(ray_current_point / (mip_level * 2.)) * (mip_level * 2.)
-                            )
-                        )
-                        / f32(viewport.frustum.z)
-                    )
-                )
-            ){
-                if( // node has MIP which is not uploaded
-                    ( 0 != (node_metadata[current_node_key / 8] & (0x01u << (16 + (current_node_key % 8u)))) )
-                    && node_mips[current_node_key] == EMPTY_MARKER
-                ){
-                    request_node(current_node_key, OOB_SECTANT);
-                } else {
-                    let mip_hit = probe_MIP(
-                        ray, &ray_current_point,
-                        current_node_key, &current_bounds,
-                        &ray_scale_factors, direction_lut_index,
-                        max_distance
-                    );
-                    if true == mip_hit.hit {
-                        return mip_hit;
-                    }
-                }
-            }
             var target_child_descriptor = node_children[(current_node_key * BOX_NODE_CHILDREN_COUNT) + target_sectant];
             if(
-                // In case node doesn't yet have the target child node uploaded to GPU
-                target_sectant != OOB_SECTANT
-                && target_child_descriptor == EMPTY_MARKER
+                (0 != (boxtree_meta_data.tree_properties & 0x00010000)) // MIPs enabled
+                && target_sectant != OOB_SECTANT // node has a target poitning inwards
+                && target_child_descriptor == EMPTY_MARKER // node doesn't have target child uploaded
                 && (( // node is occupied at target sectant
                     (target_sectant < 32)
                     && (0u != (node_occupied_bits[current_node_key * 2] & (0x01u << target_sectant) ))
@@ -721,49 +609,30 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                     (target_sectant >= 32)
                     && (0u != (node_occupied_bits[current_node_key * 2 + 1] & (0x01u << (target_sectant - 32)) ))
                 ))
-                // Request node only once per ray iteration to prioritize nodes in sight for cache
-                && 0 == (missing_data_color.r + missing_data_color.g + missing_data_color.b)
             ){
-                // request the node, then display MIP if available; do not request MIP here
-                if request_node(current_node_key, target_sectant) {
-                    missing_data_color += (
-                        COLOR_FOR_NODE_REQUEST_SENT
-                        * vec3f(traverse_node_for_ocbits(
-                            ray, &ray_current_point,
-                            current_node_key, &current_bounds,
-                            &ray_scale_factors
-                        ))
-                    );
-                } else {
-                    missing_data_color += (
-                        COLOR_FOR_NODE_REQUEST_FAIL
-                        * vec3f(traverse_node_for_ocbits(
-                            ray, &ray_current_point,
-                            current_node_key, &current_bounds,
-                            &ray_scale_factors
-                        ))
-                    );
+                let mip_hit = probe_MIP(
+                    ray, &ray_current_point,
+                    current_node_key, &current_bounds,
+                    &ray_scale_factors, direction_lut_index,
+                    max_distance
+                );
+                if true == mip_hit.hit {
+                    return mip_hit;
                 }
-                
-                if ( // Probe MIP at data miss, if enabled
-                    0 != (boxtree_meta_data.tree_properties & 0x00010000)
-                    && stage_data.stage != VHX_PREPASS_STAGE_ID
-                ){
-                    var mip_hit = probe_MIP(
-                        ray, &ray_current_point,
-                        current_node_key, &current_bounds,
-                        &ray_scale_factors, direction_lut_index,
-                        max_distance
-                    );
-                    if true == mip_hit.hit {
-                        mip_hit.albedo -= vec4f(missing_data_color, 0.);
-                        return mip_hit;
-                    }
-                }
-            } else if( // node is leaf, its target points inside and is available
+            }
+            if( // node target points inside and is available
                 target_sectant != OOB_SECTANT
                 && target_child_descriptor != EMPTY_MARKER
+
+                // node is a leaf
                 &&( 0 != (node_metadata[current_node_key / 8] & (0x01u << (current_node_key % 8u))) )
+                && (( // node is occupied at target sectant
+                    (target_sectant < 32)
+                    && (0u != (node_occupied_bits[current_node_key * 2] & (0x01u << target_sectant) ))
+                )||(
+                    (target_sectant >= 32)
+                    && (0u != (node_occupied_bits[current_node_key * 2 + 1] & (0x01u << (target_sectant - 32)) ))
+                ))
             ){
                 var hit: OctreeRayIntersection;
                 if ( 0 != (node_metadata[current_node_key / 8] & (0x01u << (8 + (current_node_key % 8u)))) ) {
@@ -783,8 +652,6 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                     );
                 }
                 if hit.hit == true {
-                    hit.albedo -= vec4f(missing_data_color, 0.);
-
                     /*// +++ DEBUG +++
                     let relative_c_point = hit.impact_point - current_bounds.min_position;
                     if (relative_c_point.x < 5. || relative_c_point.y < 5. || relative_c_point.z < 5.) {
@@ -830,7 +697,6 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                 )
             ) {
                 // POP
-                mip_level += 1.;
                 node_stack_pop(&node_stack, &node_stack_meta);
                 target_bounds = current_bounds;
                 current_bounds.size *= f32(BOX_NODE_DIMENSION);
@@ -874,7 +740,6 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                 ))
             ) {
                 // PUSH
-                set_node_used(target_child_descriptor); // Since current_node is internal, no need to filter for "parted" bit
                 current_node_key = target_child_descriptor;
                 current_bounds = target_bounds;
                 target_sectant = hash_region( // child_target_sectant
@@ -887,7 +752,6 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                     + (SECTANT_OFFSET_REGION_LUT[target_sectant] * current_bounds.size)
                 );
                 node_stack_push(&node_stack, &node_stack_meta, target_child_descriptor);
-                mip_level -= 1.;
             } else {
                 // ADVANCE
                 /*// +++ DEBUG +++
@@ -915,44 +779,11 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                         target_child_descriptor = node_children[
                             (current_node_key * BOX_NODE_CHILDREN_COUNT) + target_sectant
                         ];
-                        if( // Also request current target if not available
-                            target_child_descriptor == EMPTY_MARKER // target child key is invalid
-                            && (( // node is occupied at target sectant
-                                (target_sectant < 32)
-                                && ( 0u != (node_occupied_bits[current_node_key * 2] & (0x01u << target_sectant)) )
-                            )||(
-                                (target_sectant >= 32)
-                                && ( 0u != (node_occupied_bits[current_node_key * 2 + 1] & (0x01u << (target_sectant - 32u))) )
-                            ))
-                            // Request node only once per ray iteration to prioritize nodes in sight for cache
-                            && 0 == (missing_data_color.r + missing_data_color.g + missing_data_color.b)
-                        ){
-                            if request_node(current_node_key, target_sectant) {
-                                missing_data_color += (
-                                    COLOR_FOR_NODE_REQUEST_SENT
-                                    * vec3f(traverse_node_for_ocbits(
-                                        ray, &ray_current_point,
-                                        current_node_key, &current_bounds,
-                                        &ray_scale_factors
-                                    ))
-                                );
-                            } else {
-                                missing_data_color += (
-                                    COLOR_FOR_NODE_REQUEST_FAIL
-                                    * vec3f(traverse_node_for_ocbits(
-                                        ray, &ray_current_point,
-                                        current_node_key, &current_bounds,
-                                        &ray_scale_factors
-                                    ))
-                                );
-                            }
-                        }
                     }
                     if (
                         target_sectant == OOB_SECTANT // target is out of bounds
-                        ||( // current node is available
-                            target_child_descriptor != EMPTY_MARKER
-                            &&(( // and current node is occupied at target sectant
+                        ||( // current node is occupied at target sectant
+                            ((
                                 (target_sectant < 32)
                                 && ( 0u != (node_occupied_bits[current_node_key * 2] & (0x01u << target_sectant)) )
                             )||(
@@ -987,7 +818,7 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
             target_sectant = OOB_SECTANT;
         }
     } // while (ray inside root bounds)
-    return OctreeRayIntersection(false, vec4f(missing_data_color, 1.), ray_current_point, vec3f(0., 0., 1.));
+    return OctreeRayIntersection(false, vec4f(0., 0., 0., 1.), ray_current_point, vec3f(0., 0., 1.));
 }
 
 alias PaletteIndexValues = u32;
@@ -1014,6 +845,7 @@ struct BoxtreeMetaData {
 
 struct Viewport {
     origin: vec3f,
+    origin_delta: vec3f,
     direction: vec3f,
     frustum: vec3f,
     fov: f32,
@@ -1036,31 +868,25 @@ var depth_texture: texture_storage_2d<r32float, read_write>;
 @group(1) @binding(0)
 var<uniform> viewport: Viewport;
 
-@group(1) @binding(1)
-var<storage, read_write> node_requests: array<atomic<u32>>;
-
 @group(2) @binding(0)
 var<uniform> boxtree_meta_data: BoxtreeMetaData;
 
 @group(2) @binding(1)
-var<storage, read_write> used_bits: array<atomic<u32>>;
-
-@group(2) @binding(2)
 var<storage, read> node_metadata: array<u32>;
 
-@group(2) @binding(3)
+@group(2) @binding(2)
 var<storage, read> node_children: array<u32>;
 
-@group(2) @binding(4)
+@group(2) @binding(3)
 var<storage, read> node_mips: array<u32>;
 
-@group(2) @binding(5)
+@group(2) @binding(4)
 var<storage, read> node_occupied_bits: array<u32>;
 
-@group(2) @binding(6)
+@group(2) @binding(5)
 var<storage, read> voxels: array<PaletteIndexValues>;
 
-@group(2) @binding(7)
+@group(2) @binding(6)
 var<storage, read> color_palette: array<vec4f>;
 
 

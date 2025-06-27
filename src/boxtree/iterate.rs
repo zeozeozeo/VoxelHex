@@ -54,11 +54,11 @@ pub(crate) fn execute_for_relevant_sectants<F: FnMut(V3c<u32>, V3c<u32>, u8, &Cu
     let cell_size = node_bounds.size / BOX_NODE_DIMENSION as f32;
 
     let mut shifted_position = position;
-    while shifted_position.x < (position.x + update_size.x) {
+    while shifted_position.x <= (position.x + update_size.x) {
         shifted_position.y = position.y;
-        while shifted_position.y < (position.y + update_size.y) {
+        while shifted_position.y <= (position.y + update_size.y) {
             shifted_position.z = position.z;
-            while shifted_position.z < (position.z + update_size.z) {
+            while shifted_position.z <= (position.z + update_size.z) {
                 if !node_bounds.contains(&shifted_position) {
                     shifted_position.z += cell_size;
                     continue;
@@ -88,6 +88,7 @@ pub(crate) fn execute_for_relevant_sectants<F: FnMut(V3c<u32>, V3c<u32>, u8, &Cu
                     + V3c::unit(target_bounds.size)
                     - position_in_target)
                     .cut_by(update_size_remains);
+
                 if 0. < update_size_in_target.x
                     && 0. < update_size_in_target.y
                     && 0. < update_size_in_target.z

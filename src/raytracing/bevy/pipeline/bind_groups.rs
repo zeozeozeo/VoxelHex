@@ -88,28 +88,16 @@ pub(crate) fn create_bind_group_layouts(
     );
     let spyglass_bind_group_layout = render_device.create_bind_group_layout(
         "BoxTreeSpyGlass",
-        &[
-            BindGroupLayoutEntry {
-                binding: 0u32,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(<Viewport as ShaderType>::min_size()),
-                },
-                count: None,
+        &[BindGroupLayoutEntry {
+            binding: 0u32,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: Some(<Viewport as ShaderType>::min_size()),
             },
-            BindGroupLayoutEntry {
-                binding: 1u32,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(<Vec<u32> as ShaderType>::min_size()),
-                },
-                count: None,
-            },
-        ],
+            count: None,
+        }],
     );
     let render_data_bind_group_layout = render_device.create_bind_group_layout(
         "BoxTreeRenderData",
@@ -128,7 +116,7 @@ pub(crate) fn create_bind_group_layouts(
                 binding: 1u32,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: false },
+                    ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: Some(<Vec<u32> as ShaderType>::min_size()),
                 },
@@ -170,22 +158,12 @@ pub(crate) fn create_bind_group_layouts(
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(<Vec<u32> as ShaderType>::min_size()),
-                },
-                count: None,
-            },
-            BindGroupLayoutEntry {
-                binding: 6u32,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
                     min_binding_size: Some(<Vec<PaletteIndexValues> as ShaderType>::min_size()),
                 },
                 count: None,
             },
             BindGroupLayoutEntry {
-                binding: 7u32,
+                binding: 6u32,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
@@ -345,7 +323,7 @@ pub(crate) fn create_spyglass_bind_group(
     pipeline: &mut VhxRenderPipeline,
     render_device: &Res<RenderDevice>,
     tree_view: &BoxTreeGPUView,
-) -> (BindGroup, Buffer, Buffer, Buffer) {
+) -> (BindGroup, Buffer) {
     let mut buffer = UniformBuffer::new([0u8; Viewport::SHADER_SIZE.get() as usize]);
     buffer.write(&tree_view.spyglass.viewport).unwrap();
     let viewport_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
@@ -354,44 +332,16 @@ pub(crate) fn create_spyglass_bind_group(
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
     });
 
-    debug_assert!(
-        !tree_view.spyglass.node_requests.is_empty(),
-        "Expected node requests array to not be empty"
-    );
-    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-    buffer.write(&tree_view.spyglass.node_requests).unwrap();
-    let node_requests_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("BoxTree Node requests Buffer"),
-        contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
-    });
-
-    let readable_node_requests_buffer = render_device.create_buffer(&BufferDescriptor {
-        mapped_at_creation: false,
-        size: (tree_view.spyglass.node_requests.len()
-            * std::mem::size_of_val(&tree_view.spyglass.node_requests[0])) as u64,
-        label: Some("BoxTree Node requests staging Buffer"),
-        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-    });
-
     (
         render_device.create_bind_group(
             "OctreeSpyGlass",
             &pipeline.spyglass_bind_group_layout,
-            &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: viewport_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: node_requests_buffer.as_entire_binding(),
-                },
-            ],
+            &[BindGroupEntry {
+                binding: 0,
+                resource: viewport_buffer.as_entire_binding(),
+            }],
         ),
         viewport_buffer,
-        node_requests_buffer,
-        readable_node_requests_buffer,
     )
 }
 
@@ -426,7 +376,6 @@ pub(crate) fn create_tree_bind_group(
     Buffer,
     Buffer,
     Buffer,
-    Buffer,
 ) {
     let render_data = &tree_view.data_handler.render_data;
 
@@ -436,14 +385,6 @@ pub(crate) fn create_tree_bind_group(
         label: Some("BoxTree Tree Metadata Buffer"),
         contents: &buffer.into_inner(),
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-    });
-
-    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-    buffer.write(&render_data.used_bits).unwrap();
-    let used_bits_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-        label: Some("BoxTree Used Bits Buffer"),
-        contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let mut buffer = StorageBuffer::new(Vec::<u8>::new());
@@ -459,7 +400,7 @@ pub(crate) fn create_tree_bind_group(
     let node_children_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Node Children Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let mut buffer = StorageBuffer::new(Vec::<u8>::new());
@@ -467,7 +408,7 @@ pub(crate) fn create_tree_bind_group(
     let node_mips_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Node MIPs Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let mut buffer = StorageBuffer::new(Vec::<u8>::new());
@@ -475,18 +416,16 @@ pub(crate) fn create_tree_bind_group(
     let node_ocbits_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Node Occupied Bits Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
-    // One element in the brick metadata holds 16 bricks. See @OctreeRenderData
-    let brick_size = (render_data.boxtree_meta.tree_properties & 0x0000FFFF).pow(3);
-    let brick_element_count = (render_data.used_bits.len() * 31 * brick_size as usize) as u64;
+    let brick_size = (render_data.boxtree_meta.tree_properties & 0x0000FFFF).pow(3) as u64;
     let one_voxel_byte_size = std::mem::size_of::<PaletteIndexValues>() as u64;
     let voxels_buffer = render_device.create_buffer(&BufferDescriptor {
         mapped_at_creation: false,
-        size: one_voxel_byte_size * brick_element_count,
+        size: one_voxel_byte_size * brick_size * tree_view.data_handler.bricks_in_view as u64,
         label: Some("BoxTree Voxels Buffer"),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     let mut buffer = StorageBuffer::new(Vec::<u8>::new());
@@ -494,7 +433,7 @@ pub(crate) fn create_tree_bind_group(
     let color_palette_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
         label: Some("BoxTree Color Palette Buffer"),
         contents: &buffer.into_inner(),
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
     });
 
     (
@@ -508,36 +447,31 @@ pub(crate) fn create_tree_bind_group(
                 },
                 bevy::render::render_resource::BindGroupEntry {
                     binding: 1,
-                    resource: used_bits_buffer.as_entire_binding(),
-                },
-                bevy::render::render_resource::BindGroupEntry {
-                    binding: 2,
                     resource: node_metadata_buffer.as_entire_binding(),
                 },
                 bevy::render::render_resource::BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: node_children_buffer.as_entire_binding(),
                 },
                 bevy::render::render_resource::BindGroupEntry {
-                    binding: 4,
+                    binding: 3,
                     resource: node_mips_buffer.as_entire_binding(),
                 },
                 bevy::render::render_resource::BindGroupEntry {
-                    binding: 5,
+                    binding: 4,
                     resource: node_ocbits_buffer.as_entire_binding(),
                 },
                 bevy::render::render_resource::BindGroupEntry {
-                    binding: 6,
+                    binding: 5,
                     resource: voxels_buffer.as_entire_binding(),
                 },
                 bevy::render::render_resource::BindGroupEntry {
-                    binding: 7,
+                    binding: 6,
                     resource: color_palette_buffer.as_entire_binding(),
                 },
             ],
         ),
         boxtree_meta_buffer,
-        used_bits_buffer,
         node_metadata_buffer,
         node_children_buffer,
         node_mips_buffer,
