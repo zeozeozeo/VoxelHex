@@ -337,12 +337,9 @@ impl<
                      child_target_bounds| {
                         updated |= self.leaf_update(
                             overwrite_if_empty,
-                            current_node_key,
-                            &current_bounds,
-                            child_target_bounds,
-                            child_sectant as usize,
-                            &position_in_target,
-                            &update_size_in_target,
+                            (current_node_key, &current_bounds),
+                            (child_target_bounds, child_sectant as usize),
+                            (&position_in_target, &update_size_in_target),
                             target_content,
                         );
                     },

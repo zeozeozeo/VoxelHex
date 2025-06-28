@@ -109,11 +109,10 @@ pub(crate) fn rebuild<
 
         // Hash the position to the target child
         let child_sectant_at_position = node_bounds.sectant_for(&viewport_center);
-        let child_key_at_position =
-            tree.node_children[node_key].child(child_sectant_at_position) as usize;
+        let child_key_at_position = tree.node_children[node_key].child(child_sectant_at_position);
 
         // There is a valid child at the given position inside the node, recurse into it
-        if tree.nodes.key_is_valid(child_key_at_position as usize) {
+        if tree.nodes.key_is_valid(child_key_at_position) {
             debug_assert!(node_mip_level >= 1);
             center_node_parent = Some((node_key, node_bounds, node_mip_level));
             node_stack.push(NodeUploadRequest {
@@ -129,13 +128,12 @@ pub(crate) fn rebuild<
     }
 
     // Add parent and children nodes into the upload queue and view set
-    let center_node_key = node_stack.last().unwrap().node_key.clone();
+    let center_node_key = node_stack.last().unwrap().node_key;
     upload_targets.node_upload_queue.append(
         &mut node_stack
             .drain(..)
-            .map(|v| {
+            .inspect(|v| {
                 upload_targets.nodes_to_see.insert(v.node_key);
-                v
             })
             .collect(),
     );
@@ -342,6 +340,8 @@ pub(crate) fn handle_changes<
 
     let mut view = viewset.view_mut(0).unwrap();
     let mut updates = vec![];
+
+    #[allow(clippy::reversed_empty_ranges)]
     let mut ocbits_updated = usize::MAX..0;
 
     'uploading_buffers: {
@@ -601,8 +601,13 @@ pub(crate) fn handle_changes<
         tree.map_to_color_index_in_palette.keys().len();
 
     // compile cache updates into write batches
+    #[allow(clippy::reversed_empty_ranges)]
     let mut node_meta_updated = usize::MAX..0;
+
+    #[allow(clippy::reversed_empty_ranges)]
     let mut node_children_updated = usize::MAX..0;
+
+    #[allow(clippy::reversed_empty_ranges)]
     let mut node_mips_updated = usize::MAX..0; // Any brick upload could invalidate node_mips values
     for cache_update in updates.into_iter() {
         for node_index in cache_update.modified_nodes {

@@ -15,10 +15,10 @@ pub struct V3c<T> {
 pub type V3cf32 = V3c<f32>;
 
 impl<T: Copy> V3c<T> {
-    pub fn new(x: T, y: T, z: T) -> Self {
+    pub const fn new(x: T, y: T, z: T) -> Self {
         Self { x, y, z }
     }
-    pub fn unit(scale: T) -> Self {
+    pub const fn unit(scale: T) -> Self {
         Self {
             x: scale,
             y: scale,
@@ -80,7 +80,7 @@ impl V3c<f32> {
         self / self.length()
     }
 
-    pub fn signum(&self) -> V3c<f32> {
+    pub const fn signum(&self) -> V3c<f32> {
         V3c {
             x: self.x.signum(),
             y: self.y.signum(),
@@ -111,14 +111,14 @@ impl V3c<f32> {
         *self
     }
 
-    pub fn cut_each_component(mut self, value: f32) -> Self {
+    pub const fn cut_each_component(mut self, value: f32) -> Self {
         self.x = self.x.min(value);
         self.y = self.y.min(value);
         self.z = self.z.min(value);
         self
     }
 
-    pub fn cut_by(&mut self, value: V3c<f32>) -> Self {
+    pub const fn cut_by(&mut self, value: V3c<f32>) -> Self {
         self.x = self.x.min(value.x);
         self.y = self.y.min(value.y);
         self.z = self.z.min(value.z);

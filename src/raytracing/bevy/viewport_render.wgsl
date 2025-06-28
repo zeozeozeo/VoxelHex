@@ -116,11 +116,6 @@ fn cube_impact_normal(cube: Cube, impact_point: vec3f) -> vec3f{
 const NODE_STACK_SIZE: u32 = 4;
 const EMPTY_MARKER: u32 = 0xFFFFFFFFu;
 
-//crate::raytracing::NodeStack::is_empty
-fn node_stack_is_empty(node_stack_meta: u32) -> bool {
-    return 0 == (node_stack_meta & 0x000000FFu);
-}
-
 //crate::raytracing::NodeStack::push
 fn node_stack_push(
     node_stack: ptr<function,array<u32, NODE_STACK_SIZE>>,
@@ -148,32 +143,33 @@ fn node_stack_pop(
         return EMPTY_MARKER;
     }
     let result = (*node_stack)[(*node_stack_meta & 0x0000FF00u) >> 8u];
-    if 0 == (*node_stack_meta & 0x0000FF00u) { // head index is 0
-        *node_stack_meta = (
-            // count
-            ( ((*node_stack_meta & 0x000000FFu) - 1) )
-            // head_index
-            | ((NODE_STACK_SIZE - 1) << 8u)
-        );
-    } else {
-        *node_stack_meta = (
+    *node_stack_meta = select(
+        (
             // count
             ( ((*node_stack_meta & 0x000000FFu) - 1) )
             // head_index
             | ( ((
                 ( ((*node_stack_meta & 0x0000FF00u) >> 8u) - 1 )
             ) << 8u) & 0x0000FF00u )
-        );
-    }
+        ),
+        (
+            // count
+            ( ((*node_stack_meta & 0x000000FFu) - 1) )
+            // head_index
+            | ((NODE_STACK_SIZE - 1) << 8u)
+        ),
+        0 == (*node_stack_meta & 0x0000FF00u) // head index is 0
+    );
     return result;
 }
 
 //crate::raytracing::NodeStack::last/last_mut
 fn node_stack_last(node_stack_meta: u32) -> u32 { // returns either with index or EMPTY_MARKER
-    if 0 == (node_stack_meta & 0x000000FFu) {
-        return EMPTY_MARKER;
-    }
-    return (node_stack_meta & 0x0000FF00u) >> 8u;
+    return select(
+        (node_stack_meta & 0x0000FF00u) >> 8u,
+        EMPTY_MARKER,
+        0 == (node_stack_meta & 0x000000FFu)
+    );
 }
 
 //crate::boxtree:raytracing::get_dda_scale_factors
@@ -215,15 +211,7 @@ fn dda_step_to_next_sibling(
     var result = vec3f(0., 0., 0.);
 
     (*ray_current_point) += (*ray).direction * min_step;
-    if min_step == d.x {
-        result.x = ray_dir_sign.x;
-    }
-    if min_step == d.y {
-        result.y = ray_dir_sign.y;
-    }
-    if min_step == d.z {
-        result.z = ray_dir_sign.z;
-    }
+    result = select(result, ray_dir_sign, vec3f(min_step) == d);
     return result;
 }
 
@@ -325,7 +313,7 @@ fn traverse_brick(
             return BrickHit(true, vec3u(current_index), u32(current_flat_index));
         }
         if stage_data.stage == VHX_PREPASS_STAGE_ID
-            && length(*ray_current_point - (*ray).origin) >= max_distance
+            && dot(*ray_current_point - (*ray).origin, *ray_current_point - (*ray).origin) >= max_distance
         {
             return BrickHit(false, vec3u(current_index), u32(current_flat_index));
         }
@@ -533,10 +521,14 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
         + u32(tmp_vec.z >= 1.) * 2u
         + u32(tmp_vec.y >= 1.) * 4u
     );
-    var max_distance = 2. * f32(boxtree_meta_data.boxtree_size);
-    if stage_data.stage == VHX_PREPASS_STAGE_ID {
-        max_distance = max_distance_of_reliable_hit();
-    }
+    var max_distance = pow(
+        select( // In the main stage the upper limit to ray travel is set by data bounds
+            f32(boxtree_meta_data.boxtree_size) * 2., // a multiply of 2. is used instead of sqrt(3.) as an upper bounds estimation
+            max_distance_of_reliable_hit(),
+            stage_data.stage == VHX_PREPASS_STAGE_ID
+        ),
+        2.
+    );
 
     var node_stack: array<u32, NODE_STACK_SIZE>;
     var node_stack_meta: u32 = 0;
@@ -557,7 +549,10 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
     /*// +++ DEBUG +++
     var outer_safety = 0;
     */// --- DEBUG ---
-    while target_sectant != OOB_SECTANT && length(ray_current_point - (*ray).origin) < max_distance{
+    while(
+        target_sectant != OOB_SECTANT
+        && dot(ray_current_point - (*ray).origin, ray_current_point - (*ray).origin) < max_distance
+    ) {
         /*// +++ DEBUG +++
         outer_safety += 1;
         if(f32(outer_safety) > f32(boxtree_meta_data.boxtree_size) * sqrt(3.)) {
@@ -579,8 +574,8 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
         var safety = 0;
         */// --- DEBUG ---
         while(
-            !node_stack_is_empty(node_stack_meta)
-            && length(ray_current_point - (*ray).origin) < max_distance
+            0 != (node_stack_meta & 0x000000FFu) //crate::raytracing::NodeStack::is_empty
+            && dot(ray_current_point - (*ray).origin, ray_current_point - (*ray).origin) < max_distance
         ) {
             /*// +++ DEBUG +++
             safety += 1;
@@ -592,7 +587,7 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
             */// --- DEBUG ---
             if(
                 stage_data.stage == VHX_PREPASS_STAGE_ID
-                && length(ray_current_point - (*ray).origin) >= max_distance
+                && dot(ray_current_point - (*ray).origin, ray_current_point - (*ray).origin) >= max_distance
             ) {
                 return OctreeRayIntersection( false, vec4f(0.), ray_current_point, vec3f(0., 0., 1.) );
             }
@@ -708,7 +703,7 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                 ));
                 if(
                     stage_data.stage == VHX_PREPASS_STAGE_ID
-                    && length(ray_current_point - (*ray).origin) >= max_distance
+                    && dot(ray_current_point - (*ray).origin, ray_current_point - (*ray).origin) >= max_distance
                 ) {
                     return OctreeRayIntersection( false, vec4f(0.), ray_point_before_pop, vec3f(0., 0., 1.) );
                 }
@@ -723,9 +718,11 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                     )
                 ][u32(tmp_vec.x + 1)][u32(tmp_vec.y + 1)][u32(tmp_vec.z + 1)];
                 target_bounds.min_position += tmp_vec * target_bounds.size;
-                if(EMPTY_MARKER != node_stack_last(node_stack_meta)){
-                    current_node_key = node_stack[node_stack_last(node_stack_meta)];
-                }
+                current_node_key = select(
+                    current_node_key,
+                    node_stack[node_stack_last(node_stack_meta)],
+                    EMPTY_MARKER != node_stack_last(node_stack_meta),
+                );
                 continue;
             }
             if ( // If node is not a leaf, occupied at target sectant and target is available
@@ -791,7 +788,7 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
                                 && ( 0u != (node_occupied_bits[current_node_key * 2 + 1] & (0x01u << (target_sectant - 32u))) )
                             ))
                         )
-                        ||( length(ray_current_point - (*ray).origin) >= max_distance )
+                        || dot(ray_current_point - (*ray).origin, ray_current_point - (*ray).origin) >= max_distance
                     ) {
                         break;
                     }
@@ -801,22 +798,17 @@ fn get_by_ray(ray: ptr<function, Line>, start_distance: f32) -> OctreeRayInterse
 
         // Push ray current distance a little bit forward to avoid iterating the same paths all over again
         ray_current_point += (*ray).direction * 0.1;
-        if(
-            length(ray_current_point - (*ray).origin) < max_distance
+        target_sectant = select(
+            OOB_SECTANT,
+            hash_region(ray_current_point, f32(boxtree_meta_data.boxtree_size)),
+            dot(ray_current_point - (*ray).origin, ray_current_point - (*ray).origin) < max_distance
             && ray_current_point.x < f32(boxtree_meta_data.boxtree_size)
             && ray_current_point.y < f32(boxtree_meta_data.boxtree_size)
             && ray_current_point.z < f32(boxtree_meta_data.boxtree_size)
             && ray_current_point.x > 0.
             && ray_current_point.y > 0.
             && ray_current_point.z > 0.
-        ) {
-            target_sectant = hash_region(
-                ray_current_point,
-                f32(boxtree_meta_data.boxtree_size)
-            );
-        } else {
-            target_sectant = OOB_SECTANT;
-        }
+        );
     } // while (ray inside root bounds)
     return OctreeRayIntersection(false, vec4f(0., 0., 0., 1.), ray_current_point, vec3f(0., 0., 1.));
 }
@@ -891,22 +883,17 @@ var<storage, read> color_palette: array<vec4f>;
 
 
 @compute @workgroup_size(8, 8, 1)
-fn update(
-    @builtin(global_invocation_id) invocation_id: vec3<u32>,
-    @builtin(num_workgroups) num_workgroups: vec3<u32>,
-) {
+fn update(@builtin(global_invocation_id) invocation_id: vec3<u32>) {
+    let viewport_right_direction = normalize(cross(vec3f(0., 1., 0.), viewport.direction));
     let ray_endpoint =
         (
             viewport.origin
             + (viewport.direction * viewport.fov)
-            - (
-                normalize(cross(vec3f(0., 1., 0.), viewport.direction))
-                * (viewport.frustum.x / 2.)
-            )
+            - (viewport_right_direction * (viewport.frustum.x / 2.))
             - (vec3f(0., 1., 0.) * (viewport.frustum.y / 2.))
         ) // Viewport bottom left
         + (
-            normalize(cross(vec3f(0., 1., 0.), viewport.direction))
+            viewport_right_direction
             * viewport.frustum.x
             * (f32(invocation_id.x) / f32(stage_data.output_resolution.x))
         ) // Viewport right direction

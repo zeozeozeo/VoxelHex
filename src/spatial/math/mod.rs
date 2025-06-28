@@ -16,7 +16,7 @@ pub(crate) const FLOAT_ERROR_TOLERANCE: f32 = 0.00001;
 /// * `y` - y coordinate of position
 /// * `z` - z coordinate of position
 /// * `size` - Range of the given coordinate space
-pub(crate) fn flat_projection(x: usize, y: usize, z: usize, size: usize) -> usize {
+pub(crate) const fn flat_projection(x: usize, y: usize, z: usize, size: usize) -> usize {
     x + (y * size) + (z * size * size)
 }
 

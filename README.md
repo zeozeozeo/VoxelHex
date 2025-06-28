@@ -1,5 +1,7 @@
 # VoxelHex(v0x7H3X)
-![Repository logo](https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/blob/61cc0cc36becdc93a63ab7b7ca3dc3b65a3e54cd/new_logo.png)
+![(VoxelHex logo)](https://raw.githubusercontent.com/Ministry-of-Voxel-Affairs/VoxelHex/61cc0cc36becdc93a63ab7b7ca3dc3b65a3e54cd/new_logo.png)
+
+
 A Sparse voxel-brick tree implementation in Rust/WGPU.
 The leaf nodes of the tree contain voxel bricks instead of a single Voxel. This makes it possible to have a unique compression system, where Voxels of different resolutions can be mixed together.
 An implementation for raytracing is available with GPU support!
@@ -15,12 +17,9 @@ Issue spotlight:
 - Lights! Shadows!: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/issues/16
 - Drastic storage size decrease: https://github.com/Ministry-of-Voxel-Affairs/VoxelHex/issues/28
 
-Videos I made about the tech:
-https://www.youtube.com/watch?v=pVmUQUhrfjg&list=PL_3Xjx_NV4tw6vhcij03fZFTpt0eaO_-b
+Videos I made about the tech: [KLOK](https://www.youtube.com/watch?v=pVmUQUhrfjg&list=PL_3Xjx_NV4tw6vhcij03fZFTpt0eaO_-b)
 
-Check out my youtube channel!
-https://www.youtube.com/@thedavud1109?sub_confirmation=1
-
+Also.. check out [my youtube channel](https://www.youtube.com/@thedavud1109?sub_confirmation=1)!
 
 Special thanks to contributors and supporters!
 -

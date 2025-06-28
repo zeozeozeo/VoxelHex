@@ -346,7 +346,7 @@ pub(crate) fn prepare_bind_groups(
                 resources.color_palette_buffer.size(),
             );
 
-            render_queue.submit([command_encoder.finish()].into_iter());
+            render_queue.submit([command_encoder.finish()]);
 
             view.resources = Some(new_resources);
             view.resize = false;

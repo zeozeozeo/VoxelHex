@@ -74,7 +74,7 @@ impl Cube {
 /// It returns with OOB_SECTANT if the result is out of bounds.
 /// Important note: the specs of `signum` behvaes differently for f32 and i32
 /// So the conversion to i32 is absolutely required
-pub(crate) fn step_sectant(sectant: u8, step: V3c<f32>) -> u8 {
+pub(crate) const fn step_sectant(sectant: u8, step: V3c<f32>) -> u8 {
     SECTANT_STEP_RESULT_LUT[sectant as usize][((step.x as i32).signum() + 1) as usize]
         [((step.y as i32).signum() + 1) as usize][((step.z as i32).signum() + 1) as usize]
 }

@@ -161,12 +161,9 @@ impl<
     pub(crate) fn leaf_update(
         &mut self,
         overwrite_if_empty: bool,
-        node_key: usize,
-        node_bounds: &Cube,
-        target_bounds: &Cube,
-        target_child_sectant: usize,
-        position: &V3c<u32>,
-        size: &V3c<u32>,
+        (node_key, node_bounds): (usize, &Cube),
+        (target_bounds, target_child_sectant): (&Cube, usize),
+        (position, size): (&V3c<u32>, &V3c<u32>),
         target_content: PaletteIndexValues,
     ) -> bool {
         // Update the leaf node, if it is possible as is, and if it's even needed to update
@@ -342,12 +339,9 @@ impl<
 
                             return self.leaf_update(
                                 overwrite_if_empty,
-                                node_key,
-                                node_bounds,
-                                target_bounds,
-                                target_child_sectant,
-                                position,
-                                size,
+                                (node_key, node_bounds),
+                                (target_bounds, target_child_sectant),
+                                (position, size),
                                 target_content,
                             );
                         }
@@ -444,12 +438,9 @@ impl<
                 }
                 self.leaf_update(
                     overwrite_if_empty,
-                    node_key,
-                    node_bounds,
-                    target_bounds,
-                    target_child_sectant,
-                    position,
-                    size,
+                    (node_key, node_bounds),
+                    (target_bounds, target_child_sectant),
+                    (position, size),
                     target_content,
                 )
             }
@@ -470,12 +461,9 @@ impl<
                 self.deallocate_children_of(node_key);
                 self.leaf_update(
                     overwrite_if_empty,
-                    node_key,
-                    node_bounds,
-                    target_bounds,
-                    target_child_sectant,
-                    position,
-                    size,
+                    (node_key, node_bounds),
+                    (target_bounds, target_child_sectant),
+                    (position, size),
                     target_content,
                 )
             }
@@ -497,12 +485,9 @@ impl<
                 self.deallocate_children_of(node_key);
                 self.leaf_update(
                     overwrite_if_empty,
-                    node_key,
-                    node_bounds,
-                    target_bounds,
-                    target_child_sectant,
-                    position,
-                    size,
+                    (node_key, node_bounds),
+                    (target_bounds, target_child_sectant),
+                    (position, size),
                     target_content,
                 )
             }

@@ -83,7 +83,7 @@ pub(crate) fn execute_for_relevant_sectants<F: FnMut(V3c<u32>, V3c<u32>, u8, &Cu
                     position.y.max(target_bounds.min_position.y),
                     position.z.max(target_bounds.min_position.z),
                 );
-                let update_size_remains = V3c::from(position) + update_size - position_in_target;
+                let update_size_remains = position + update_size - position_in_target;
                 let update_size_in_target = (target_bounds.min_position
                     + V3c::unit(target_bounds.size)
                     - position_in_target)

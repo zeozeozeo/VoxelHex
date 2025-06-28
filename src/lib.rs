@@ -1,8 +1,12 @@
+#![doc = include_str!("../README.md")]
+
 mod object_pool;
 mod spatial;
 
+/// Container for voxel data
 pub mod boxtree;
 
+/// Serialization/deserialization
 #[cfg(any(
     feature = "bytecode",
     feature = "serialization",
@@ -10,9 +14,11 @@ pub mod boxtree;
 ))]
 pub mod convert;
 
+/// Real time raytracing for voxel data
 #[cfg(feature = "raytracing")]
 pub mod raytracing;
 
+/// Library version
 #[derive(Debug, Eq, PartialEq)]
 pub struct Version {
     major: u32,
@@ -52,6 +58,7 @@ impl Version {
     }
 }
 
+/// Returns the current version of the library
 pub fn version() -> Version {
     let numbers: Vec<u32> = env!("CARGO_PKG_VERSION")
         .split(".")

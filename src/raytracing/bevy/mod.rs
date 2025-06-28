@@ -248,7 +248,7 @@ fn handle_viewport_position_updates<
 
             if !view.brick_slot.contains(&view.spyglass.viewport.origin) {
                 view.data_handler.upload_range = Cube {
-                    min_position: view.spyglass.viewport.origin.clone()
+                    min_position: view.spyglass.viewport.origin
                         - V3c::unit(view.spyglass.viewport.frustum.z / 2.),
                     size: view.spyglass.viewport.frustum.z,
                 };

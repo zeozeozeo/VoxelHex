@@ -86,11 +86,11 @@ impl BoxTreeGPUDataHandler {
     //##############################################################################
     /// Erases the child node pointed by the given victim pointer
     /// returns with the vector of nodes modified
-    fn erase_node_child<'a, T>(
+    fn erase_node_child<T>(
         &mut self,
         meta_index: usize,
         child_sectant: usize,
-        tree: &'a BoxTree<T>,
+        tree: &BoxTree<T>,
     ) -> Vec<usize>
     where
         T: Default + Clone + Eq + VoxelData + Hash,
@@ -181,7 +181,7 @@ impl BoxTreeGPUDataHandler {
                 if child_descriptor != empty_marker::<u32>() as usize {
                     self.upload_targets
                         .brick_ownership
-                        .remove_by_left(&(brick_index as usize));
+                        .remove_by_left(&{ brick_index });
                 }
             }
         }

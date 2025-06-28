@@ -25,7 +25,7 @@ pub(crate) struct Cube {
 
 impl Cube {
     /// Creates boundaries starting from (0,0,0), with the given size
-    pub(crate) fn root_bounds(size: f32) -> Self {
+    pub(crate) const fn root_bounds(size: f32) -> Self {
         Self {
             min_position: V3c::unit(0.),
             size,
@@ -33,7 +33,7 @@ impl Cube {
     }
 
     /// True if the given position is within the boundaries of the object
-    pub(crate) fn contains(&self, position: &V3c<f32>) -> bool {
+    pub(crate) const fn contains(&self, position: &V3c<f32>) -> bool {
         position.x >= self.min_position.x
             && position.y >= self.min_position.y
             && position.z >= self.min_position.z

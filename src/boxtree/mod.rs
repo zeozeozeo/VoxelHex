@@ -2,7 +2,11 @@ mod detail;
 pub(crate) mod iterate;
 pub(crate) mod mipmap;
 mod node;
+
+/// The inner structure of the container
 pub mod types;
+
+/// Utilities for data update ibnside the voxel container
 pub mod update;
 
 #[cfg(test)]
@@ -59,6 +63,7 @@ impl<'a, T: VoxelData> From<(&'a Albedo, &'a T)> for BoxTreeEntry<'a, T> {
     }
 }
 
+/// Helper macro to create voxel data entries
 #[macro_export]
 macro_rules! voxel_data {
     ($data:expr) => {
@@ -109,18 +114,38 @@ impl<'a, T: VoxelData> BoxTreeEntry<'a, T> {
 }
 
 //####################################################################################
-//     ███████      █████████  ███████████ ███████████   ██████████ ██████████
-//   ███░░░░░███   ███░░░░░███░█░░░███░░░█░░███░░░░░███ ░░███░░░░░█░░███░░░░░█
-//  ███     ░░███ ███     ░░░ ░   ░███  ░  ░███    ░███  ░███  █ ░  ░███  █ ░
-// ░███      ░███░███             ░███     ░██████████   ░██████    ░██████
-// ░███      ░███░███             ░███     ░███░░░░░███  ░███░░█    ░███░░█
-// ░░███     ███ ░░███     ███    ░███     ░███    ░███  ░███ ░   █ ░███ ░   █
-//  ░░░███████░   ░░█████████     █████    █████   █████ ██████████ ██████████
-//    ░░░░░░░      ░░░░░░░░░     ░░░░░    ░░░░░   ░░░░░ ░░░░░░░░░░ ░░░░░░░░░░
+//  ███████████     ███████    █████ █████ ███████████ ███████████   ██████████ ██████████
+// ░░███░░░░░███  ███░░░░░███ ░░███ ░░███ ░█░░░███░░░█░░███░░░░░███ ░░███░░░░░█░░███░░░░░█
+//  ░███    ░███ ███     ░░███ ░░███ ███  ░   ░███  ░  ░███    ░███  ░███  █ ░  ░███  █ ░
+//  ░██████████ ░███      ░███  ░░█████       ░███     ░██████████   ░██████    ░██████
+//  ░███░░░░░███░███      ░███   ███░███      ░███     ░███░░░░░███  ░███░░█    ░███░░█
+//  ░███    ░███░░███     ███   ███ ░░███     ░███     ░███    ░███  ░███ ░   █ ░███ ░   █
+//  ███████████  ░░░███████░   █████ █████    █████    █████   █████ ██████████ ██████████
+// ░░░░░░░░░░░     ░░░░░░░    ░░░░░ ░░░░░    ░░░░░    ░░░░░   ░░░░░ ░░░░░░░░░░ ░░░░░░░░░░
 //####################################################################################
 pub(crate) const OOB_SECTANT: u8 = 64;
 pub(crate) const BOX_NODE_DIMENSION: usize = 4;
 pub(crate) const BOX_NODE_CHILDREN_COUNT: usize = 64;
+
+/// Creates a boxtree with the given parameters, also sets defaults for brick_dimension and user data type if not given!
+#[macro_export]
+macro_rules! make_tree {
+    ($size:expr) => {
+        Boxtree::<u32>::new($size, 32)
+    };
+
+    ($size:expr, $brick_dim:expr) => {
+        Boxtree::<u32>::new($size, $brick_dim)
+    };
+
+    (<$type:ty>, $size:expr) => {
+        Boxtree::<$type>::new($size, 32)
+    };
+
+    (<$type:ty>, $size:expr, $brick_dim:expr) => {
+        Boxtree::<$type>::new($size, $brick_dim)
+    };
+}
 
 impl<
         #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode

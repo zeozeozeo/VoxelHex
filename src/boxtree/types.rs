@@ -20,6 +20,7 @@ pub enum OctreeError {
     InvalidPosition { x: u32, y: u32, z: u32 },
 }
 
+/// An entry for stored voxel data
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BoxTreeEntry<'a, T: VoxelData> {
     /// No information available in boxtree query
@@ -35,6 +36,7 @@ pub enum BoxTreeEntry<'a, T: VoxelData> {
     Complex(&'a Albedo, &'a T),
 }
 
+/// Data representation for a matrix of voxels
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
 pub(crate) enum BrickData<T>
