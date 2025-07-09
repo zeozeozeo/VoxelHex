@@ -27,9 +27,6 @@ use crate::{
 };
 use std::{collections::HashMap, path::Path};
 
-#[cfg(feature = "serde")]
-use serde::{Serialize, de::DeserializeOwned};
-
 #[cfg(feature = "bytecode")]
 use bendy::{decoding::FromBencode, encoding::ToBencode};
 

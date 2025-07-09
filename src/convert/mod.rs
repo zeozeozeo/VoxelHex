@@ -7,6 +7,3 @@ mod tests;
 
 #[cfg(all(feature = "bytecode", feature = "dot_vox_support"))]
 mod magicavoxel;
-
-#[cfg(feature = "serde")]
-mod serde;
