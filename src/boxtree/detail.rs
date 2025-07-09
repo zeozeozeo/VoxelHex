@@ -6,7 +6,6 @@ use crate::{
     object_pool::empty_marker,
     spatial::{lut::SECTANT_OFFSET_LUT, math::flat_projection},
 };
-use bendy::{decoding::FromBencode, encoding::ToBencode};
 use num_traits::Zero;
 use std::{
     hash::Hash,
@@ -136,20 +135,7 @@ where
     pub(crate) const ROOT_NODE_KEY: u32 = 0;
 }
 
-impl<
-        #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
-            + ToBencode
-            + Serialize
-            + DeserializeOwned
-            + Default
-            + Eq
-            + Clone
-            + Hash
-            + VoxelData,
-        #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData,
-    > BoxTree<T>
+impl<T: crate::boxtree::UnifiedVoxelData> BoxTree<T>
 {
     /// Provides the child key if there is a valid child under the given sectant
     pub(crate) fn valid_child_for(&self, node_key: usize, sectant: u8) -> Option<usize> {

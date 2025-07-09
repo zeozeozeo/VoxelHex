@@ -1,9 +1,8 @@
 use crate::boxtree::{
-    empty_marker,
+    BOX_NODE_CHILDREN_COUNT, BoxTreeEntry, V3c, empty_marker,
     types::{
         Albedo, BrickData, NodeChildren, NodeConnection, NodeContent, PaletteIndexValues, VoxelData,
     },
-    BoxTreeEntry, V3c, BOX_NODE_CHILDREN_COUNT,
 };
 use crate::spatial::math::{flat_projection, set_occupied_bitmap_value};
 use std::{

@@ -6,6 +6,9 @@ mod node;
 /// The inner structure of the container
 pub mod types;
 
+/// Unified trait definitions to simplify generic constraints
+pub mod unified_traits;
+
 /// Utilities for data update ibnside the voxel container
 pub mod update;
 
@@ -16,19 +19,20 @@ pub use crate::spatial::math::vector::{V3c, V3cf32};
 pub use types::{
     Albedo, BoxTree, BoxTreeEntry, MIPMapStrategy, MIPResamplingMethods, StrategyUpdater, VoxelData,
 };
+pub use unified_traits::UnifiedVoxelData;
 
 use crate::{
     boxtree::types::{BrickData, NodeChildren, NodeContent, OctreeError, PaletteIndexValues},
-    object_pool::{empty_marker, ObjectPool},
+    object_pool::{ObjectPool, empty_marker},
     spatial::{
-        math::{flat_projection, matrix_index_for},
         Cube,
+        math::{flat_projection, matrix_index_for},
     },
 };
-use std::{collections::HashMap, hash::Hash, path::Path};
+use std::{collections::HashMap, path::Path};
 
-#[cfg(feature = "serialization")]
-use serde::{de::DeserializeOwned, Serialize};
+#[cfg(feature = "serde")]
+use serde::{Serialize, de::DeserializeOwned};
 
 #[cfg(feature = "bytecode")]
 use bendy::{decoding::FromBencode, encoding::ToBencode};
@@ -147,21 +151,7 @@ macro_rules! make_tree {
     };
 }
 
-impl<
-        #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
-            + ToBencode
-            + Serialize
-            + DeserializeOwned
-            + Default
-            + Eq
-            + Clone
-            + Hash
-            + VoxelData,
-        #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData,
-    > BoxTree<T>
-{
+impl<T: UnifiedVoxelData> BoxTree<T> {
     /// converts the data structure to a byte representation
     #[cfg(feature = "bytecode")]
     pub fn to_bytes(&self) -> Vec<u8> {

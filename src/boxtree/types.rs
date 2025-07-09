@@ -1,9 +1,6 @@
 use crate::{boxtree::BOX_NODE_CHILDREN_COUNT, object_pool::ObjectPool};
 use std::{collections::HashMap, error::Error, hash::Hash};
 
-#[cfg(feature = "serialization")]
-use serde::{Deserialize, Serialize};
-
 /// error types during usage or creation of the boxtree
 #[derive(Debug)]
 pub enum OctreeError {
@@ -38,7 +35,7 @@ pub enum BoxTreeEntry<'a, T: VoxelData> {
 
 /// Data representation for a matrix of voxels
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) enum BrickData<T>
 where
     T: Clone + PartialEq + Clone,
@@ -54,7 +51,7 @@ where
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub(crate) enum NodeContent<T>
 where
     T: Clone + PartialEq + Clone,
@@ -74,7 +71,7 @@ where
 }
 
 #[derive(Default, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub(crate) enum NodeChildren<T: Default> {
     #[default]
     NoChildren,
@@ -89,7 +86,7 @@ pub trait VoxelData {
 }
 
 /// Color properties of a voxel
-#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Albedo {
     pub r: u8,
@@ -106,6 +103,7 @@ pub type OctreeMIPMapStrategy = HashMap<usize, MIPResamplingMethods>;
 /// Implemented methods for MIP sampling. Default is set for
 /// all MIP leveles not mentioned in the strategy
 #[derive(Debug, Default, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MIPResamplingMethods {
     /// MIP sampled from the MIPs below it, each voxel is the gamma corrected
     /// average of the voxels the cell contains on the same space one level below.
@@ -149,6 +147,7 @@ pub struct StrategyUpdater<'a, T: Default + Clone + Eq + Hash>(pub(crate) &'a mu
 /// Activating MIP maps will require a larger GPU view (see @OctreeGPUHost::create_new_view)
 /// As the MIP bricks will take space from other bricks.
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MIPMapStrategy {
     /// Decides if the strategy is enabled, see @Octree/node_mips
     pub(crate) enabled: bool,
@@ -165,7 +164,7 @@ pub struct MIPMapStrategy {
 /// A Brick is a 3 dimensional matrix, each element of it containing a voxel.
 /// A Brick can be indexed directly, as opposed to the boxtree which is essentially a
 /// tree-graph where each node has 64 children.
-#[cfg_attr(feature = "serialization", derive(Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Clone)]
 pub struct BoxTree<T = u32>
 where
@@ -193,11 +192,11 @@ where
     pub(crate) voxel_data_palette: Vec<T>, // referenced by @nodes
 
     /// Cache variable to help find colors inside the color palette
-    #[cfg_attr(feature = "serialization", serde(skip_serializing, skip_deserializing))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing, skip_deserializing))]
     pub(crate) map_to_color_index_in_palette: HashMap<Albedo, usize>,
 
     /// Cache variable to help find user data in the palette
-    #[cfg_attr(feature = "serialization", serde(skip_serializing, skip_deserializing))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing, skip_deserializing))]
     pub(crate) map_to_data_index_in_palette: HashMap<T, usize>,
 
     /// Feature flag to enable/disable simplification attempts during boxtree update operations

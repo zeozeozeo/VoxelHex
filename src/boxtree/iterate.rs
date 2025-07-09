@@ -1,11 +1,10 @@
 use crate::{
     boxtree::{
-        types::NodeContent, Albedo, BoxTree, MIPResamplingMethods, VoxelData, BOX_NODE_DIMENSION,
+        types::NodeContent, Albedo, BoxTree, MIPResamplingMethods, UnifiedVoxelData, BOX_NODE_DIMENSION,
     },
     spatial::{math::vector::V3c, Cube},
 };
-use bendy::{decoding::FromBencode, encoding::ToBencode};
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
 pub(crate) trait MIPResamplingFunction {
     /// Provides a color value from the given range acquired from the sampling function
@@ -113,20 +112,7 @@ pub(crate) fn execute_for_relevant_sectants<F: FnMut(V3c<u32>, V3c<u32>, u8, &Cu
     V3c::from(update_size)
 }
 
-impl<
-        #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
-            + ToBencode
-            + Serialize
-            + DeserializeOwned
-            + Default
-            + Eq
-            + Clone
-            + Hash
-            + VoxelData,
-        #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData,
-    > BoxTree<T>
+impl<T: UnifiedVoxelData> BoxTree<T>
 {
     pub(crate) fn get_node_internal(
         &self,

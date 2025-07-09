@@ -2,7 +2,7 @@ use crate::{
     boxtree::{
         iterate::execute_for_relevant_sectants,
         types::{BrickData, NodeChildren, NodeContent, OctreeError, PaletteIndexValues},
-        BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT,
+        BoxTree, UnifiedVoxelData, BOX_NODE_CHILDREN_COUNT,
     },
     object_pool::empty_marker,
     spatial::{
@@ -10,25 +10,8 @@ use crate::{
         Cube,
     },
 };
-use std::hash::Hash;
 
-#[cfg(feature = "bytecode")]
-use bendy::{decoding::FromBencode, encoding::ToBencode};
-
-impl<
-        #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
-            + ToBencode
-            + Serialize
-            + DeserializeOwned
-            + Default
-            + Eq
-            + Clone
-            + Hash
-            + VoxelData,
-        #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData,
-    > BoxTree<T>
+impl<T: UnifiedVoxelData> BoxTree<T>
 {
     //####################################################################################
     //    █████████  █████       ██████████   █████████   ███████████

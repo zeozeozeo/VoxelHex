@@ -2,7 +2,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
 #[derive(Default, Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
 #[cfg_attr(
-    feature = "serialization",
+    feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
 )]
 #[repr(C)]

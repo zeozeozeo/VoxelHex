@@ -8,5 +8,5 @@ mod tests;
 #[cfg(all(feature = "bytecode", feature = "dot_vox_support"))]
 mod magicavoxel;
 
-#[cfg(feature = "serialization")]
+#[cfg(feature = "serde")]
 mod serde;

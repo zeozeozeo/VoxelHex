@@ -7,7 +7,7 @@ mod tests;
 use crate::{
     boxtree::{
         types::{BoxTreeEntry, BrickData, NodeChildren, NodeContent, PaletteIndexValues},
-        Albedo, BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
+        Albedo, BoxTree, UnifiedVoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
     object_pool::empty_marker,
     spatial::{
@@ -19,25 +19,9 @@ use crate::{
     },
 };
 use num_traits::Zero;
-use std::{fmt::Debug, hash::Hash};
+use std::fmt::Debug;
 
-#[cfg(feature = "bytecode")]
-use bendy::{decoding::FromBencode, encoding::ToBencode};
-
-impl<
-        #[cfg(all(feature = "bytecode", feature = "serialization"))] T: FromBencode
-            + ToBencode
-            + Serialize
-            + DeserializeOwned
-            + Default
-            + Eq
-            + Clone
-            + Hash
-            + VoxelData,
-        #[cfg(all(feature = "bytecode", not(feature = "serialization")))] T: FromBencode + ToBencode + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), feature = "serialization"))] T: Serialize + DeserializeOwned + Default + Eq + Clone + Hash + VoxelData,
-        #[cfg(all(not(feature = "bytecode"), not(feature = "serialization")))] T: Default + Eq + Clone + Hash + VoxelData,
-    > BoxTree<T>
+impl<T: UnifiedVoxelData> BoxTree<T>
 {
     //####################################################################################
     // ███████████    █████████   █████       ██████████ ███████████ ███████████ ██████████

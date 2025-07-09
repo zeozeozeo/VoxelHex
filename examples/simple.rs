@@ -169,7 +169,7 @@ impl VoxelData for MyAwesomeData {
 }
 
 // To serialize the tree the serde traits are needed
-#[cfg(feature = "serialization")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 // ..And to be able to save and load the data in the boxtree, the bendy crate is used.
@@ -204,7 +204,7 @@ impl FromBencode for MyAwesomeData {
     }
 }
 
-#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Default, Clone, Eq, PartialEq, Hash)]
 struct MyAwesomeData {
     data_field: i64,

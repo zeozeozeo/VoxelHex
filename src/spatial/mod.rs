@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Default, Clone, Copy, Debug)]
 #[cfg_attr(
-    feature = "serialization",
+    feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub(crate) struct Cube {
