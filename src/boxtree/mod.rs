@@ -6,9 +6,6 @@ mod node;
 /// The inner structure of the container
 pub mod types;
 
-/// Unified trait definitions to simplify generic constraints
-pub mod unified_traits;
-
 /// Utilities for data update ibnside the voxel container
 pub mod update;
 
@@ -19,7 +16,6 @@ pub use crate::spatial::math::vector::{V3c, V3cf32};
 pub use types::{
     Albedo, BoxTree, BoxTreeEntry, MIPMapStrategy, MIPResamplingMethods, StrategyUpdater, VoxelData,
 };
-pub use unified_traits::UnifiedVoxelData;
 
 use crate::{
     boxtree::types::{BrickData, NodeChildren, NodeContent, OctreeError, PaletteIndexValues},
@@ -151,7 +147,7 @@ macro_rules! make_tree {
     };
 }
 
-impl<T: UnifiedVoxelData> BoxTree<T> {
+impl<T: VoxelData> BoxTree<T> {
     /// converts the data structure to a byte representation
     #[cfg(feature = "bytecode")]
     pub fn to_bytes(&self) -> Vec<u8> {

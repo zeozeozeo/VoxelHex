@@ -2,7 +2,7 @@ mod cache;
 pub(crate) mod upload_queue;
 
 use crate::{
-    boxtree::{BOX_NODE_CHILDREN_COUNT, BoxTree, UnifiedVoxelData, V3c},
+    boxtree::{BOX_NODE_CHILDREN_COUNT, BoxTree, VoxelData, V3c},
     object_pool::empty_marker,
     raytracing::bevy::types::BoxTreeGPUView,
 };
@@ -12,7 +12,7 @@ use bevy::render::{
 };
 use std::ops::Range;
 
-pub(crate) fn boxtree_properties<T: UnifiedVoxelData>(tree: &BoxTree<T>) -> u32 {
+pub(crate) fn boxtree_properties<T: VoxelData>(tree: &BoxTree<T>) -> u32 {
     (tree.brick_dim & 0x0000FFFF) | ((tree.mip_map_strategy.is_enabled() as u32) << 16)
 }
 

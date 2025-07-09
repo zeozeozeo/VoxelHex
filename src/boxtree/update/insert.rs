@@ -2,7 +2,7 @@ use crate::{
     boxtree::{
         iterate::execute_for_relevant_sectants,
         types::{BoxTreeEntry, BrickData, NodeChildren, NodeContent, OctreeError},
-        BoxTree, UnifiedVoxelData,
+        BoxTree, VoxelData,
     },
     spatial::{
         math::{flat_projection, matrix_index_for, vector::V3c},
@@ -13,7 +13,7 @@ use crate::{
 #[cfg(debug_assertions)]
 use crate::boxtree::BOX_NODE_CHILDREN_COUNT;
 
-impl<T: UnifiedVoxelData> BoxTree<T>
+impl<T: VoxelData> BoxTree<T>
 {
     //####################################################################################
     //  █████ ██████   █████  █████████  ██████████ ███████████   ███████████

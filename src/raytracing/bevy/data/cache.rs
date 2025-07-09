@@ -1,6 +1,6 @@
 use crate::{
     boxtree::{
-        BOX_NODE_CHILDREN_COUNT, BoxTree, OOB_SECTANT, UnifiedVoxelData, V3c, VoxelData,
+        BOX_NODE_CHILDREN_COUNT, BoxTree, OOB_SECTANT, V3c, VoxelData,
         types::{BrickData, NodeContent},
     },
     object_pool::empty_marker,
@@ -239,7 +239,7 @@ impl BoxTreeGPUDataHandler {
     /// Writes: metadata, available child information, occupied bits and parent connections
     /// It will try to collecty MIP information if still available, but will not upload a MIP
     /// * `returns` - Returns the meta index of the added node, the modified nodes and bricks updates for the insertion
-    pub(crate) fn add_node<'a, T: UnifiedVoxelData>(
+    pub(crate) fn add_node<'a, T: VoxelData>(
         &mut self,
         tree: &'a BoxTree<T>,
         node_upload_request: &NodeUploadRequest,

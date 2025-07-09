@@ -1,7 +1,7 @@
 use crate::spatial::lut::SECTANT_OFFSET_LUT;
 use crate::{
     boxtree::{
-        Albedo, BOX_NODE_DIMENSION, BoxTree, OOB_SECTANT, UnifiedVoxelData,
+        Albedo, BOX_NODE_DIMENSION, BoxTree, OOB_SECTANT, VoxelData,
         iterate::MIPResamplingFunction,
         types::{
             BoxTreeEntry, BrickData, MIPMapStrategy, MIPResamplingMethods, NodeChildren,
@@ -16,7 +16,7 @@ use crate::{
 };
 use std::collections::HashMap;
 
-impl<T: UnifiedVoxelData> BoxTree<T> {
+impl<T: VoxelData> BoxTree<T> {
     //####################################################################################
     //  ██████   ██████ █████ ███████████
     // ░░██████ ██████ ░░███ ░░███░░░░░███
@@ -457,7 +457,7 @@ impl MIPMapStrategy {
     }
 }
 
-impl<T: UnifiedVoxelData> StrategyUpdater<'_, T> {
+impl<T: VoxelData> StrategyUpdater<'_, T> {
     /// Resets the strategy for MIP maps during resample operations
     pub fn reset(self) -> Self {
         self.0.mip_map_strategy = MIPMapStrategy::default();

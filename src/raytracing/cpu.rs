@@ -1,6 +1,6 @@
 use crate::{
     boxtree::{
-        BOX_NODE_DIMENSION, BoxTree, BoxTreeEntry, OOB_SECTANT, UnifiedVoxelData, V3c,
+        BOX_NODE_DIMENSION, BoxTree, BoxTreeEntry, OOB_SECTANT, VoxelData, V3c,
         types::{BrickData, NodeChildren, NodeContent, PaletteIndexValues},
     },
     spatial::{
@@ -79,7 +79,7 @@ where
     }
 }
 
-impl<T: UnifiedVoxelData> BoxTree<T> {
+impl<T: VoxelData> BoxTree<T> {
     pub(crate) fn get_dda_scale_factors(ray: &Ray) -> V3c<f32> {
         V3c::new(
             (1. + (ray.direction.z / ray.direction.x).powf(2.)

@@ -3,7 +3,7 @@ pub use crate::raytracing::bevy::types::{
     VhxViewSet, Viewport,
 };
 use crate::{
-    boxtree::{BOX_NODE_CHILDREN_COUNT, UnifiedVoxelData, V3c, V3cf32},
+    boxtree::{BOX_NODE_CHILDREN_COUNT, VoxelData, V3c, V3cf32},
     object_pool::empty_marker,
     raytracing::{
         BoxTreeRenderData,
@@ -29,7 +29,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-impl<T: UnifiedVoxelData> BoxTreeGPUHost<T> {
+impl<T: VoxelData> BoxTreeGPUHost<T> {
     /// Creates GPU compatible data renderable on the GPU from an BoxTree
     pub fn create_new_view(
         &mut self,

@@ -2,7 +2,7 @@ use crate::{
     boxtree::{
         iterate::execute_for_relevant_sectants,
         types::{BrickData, NodeContent},
-        BoxTree, UnifiedVoxelData, V3c, V3cf32, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
+        BoxTree, VoxelData, V3c, V3cf32, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
     object_pool::empty_marker,
     raytracing::bevy::{
@@ -30,7 +30,7 @@ impl UploadQueueTargets {
 }
 
 /// Recreates the list of nodes and bricks to upload based on the current position and view distance
-pub(crate) fn rebuild<T: UnifiedVoxelData>(
+pub(crate) fn rebuild<T: VoxelData>(
     tree: &BoxTree<T>,
     viewport_center_: &V3cf32,
     view_distance: f32,
@@ -131,7 +131,7 @@ pub(crate) fn rebuild<T: UnifiedVoxelData>(
     );
 }
 
-fn add_children_to_upload_queue<T: UnifiedVoxelData>(
+fn add_children_to_upload_queue<T: VoxelData>(
     (node_key, node_bounds, node_mip_level): (usize, Cube, u32),
     tree: &BoxTree<T>,
     viewport_center: &V3c<f32>,
@@ -271,7 +271,7 @@ fn add_children_to_upload_queue<T: UnifiedVoxelData>(
     }
 }
 
-pub(crate) fn handle_changes<T: UnifiedVoxelData>(
+pub(crate) fn handle_changes<T: VoxelData>(
     tree_gpu_host: Option<Res<BoxTreeGPUHost<T>>>,
     mut vhx_pipeline: Option<ResMut<VhxRenderPipeline>>,
     mut viewset: Option<ResMut<VhxViewSet>>,

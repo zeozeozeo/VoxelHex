@@ -7,7 +7,7 @@ mod tests;
 use crate::{
     boxtree::{
         types::{BoxTreeEntry, BrickData, NodeChildren, NodeContent, PaletteIndexValues},
-        Albedo, BoxTree, UnifiedVoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
+        Albedo, BoxTree, VoxelData, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
     },
     object_pool::empty_marker,
     spatial::{
@@ -21,7 +21,7 @@ use crate::{
 use num_traits::Zero;
 use std::fmt::Debug;
 
-impl<T: UnifiedVoxelData> BoxTree<T>
+impl<T: VoxelData> BoxTree<T>
 {
     //####################################################################################
     // ███████████    █████████   █████       ██████████ ███████████ ███████████ ██████████

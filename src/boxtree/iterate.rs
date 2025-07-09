@@ -1,6 +1,6 @@
 use crate::{
     boxtree::{
-        types::NodeContent, Albedo, BoxTree, MIPResamplingMethods, UnifiedVoxelData, BOX_NODE_DIMENSION,
+        types::NodeContent, Albedo, BoxTree, MIPResamplingMethods, VoxelData, BOX_NODE_DIMENSION,
     },
     spatial::{math::vector::V3c, Cube},
 };
@@ -112,7 +112,7 @@ pub(crate) fn execute_for_relevant_sectants<F: FnMut(V3c<u32>, V3c<u32>, u8, &Cu
     V3c::from(update_size)
 }
 
-impl<T: UnifiedVoxelData> BoxTree<T>
+impl<T: VoxelData> BoxTree<T>
 {
     pub(crate) fn get_node_internal(
         &self,

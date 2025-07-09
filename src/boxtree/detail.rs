@@ -1,7 +1,9 @@
 use crate::{
     boxtree::{
-        types::{Albedo, BoxTree, NodeChildren, NodeContent, PaletteIndexValues, VoxelData},
-        BrickData, V3c, BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION,
+        BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION, BrickData, V3c,
+        types::{
+            Albedo, BoxTree, NodeChildren, NodeContent, PaletteIndexValues, VoxelData, VoxelDataExt,
+        },
     },
     object_pool::empty_marker,
     spatial::{lut::SECTANT_OFFSET_LUT, math::flat_projection},
@@ -12,7 +14,7 @@ use std::{
     ops::{Add, Div},
 };
 
-impl<T: Zero + PartialEq> VoxelData for T {
+impl<T: VoxelDataExt + Zero + Default + Eq + Clone + Hash + Send + Sync + 'static> VoxelData for T {
     fn is_empty(&self) -> bool {
         *self == T::zero()
     }
@@ -135,8 +137,7 @@ where
     pub(crate) const ROOT_NODE_KEY: u32 = 0;
 }
 
-impl<T: crate::boxtree::UnifiedVoxelData> BoxTree<T>
-{
+impl<T: crate::boxtree::VoxelData> BoxTree<T> {
     /// Provides the child key if there is a valid child under the given sectant
     pub(crate) fn valid_child_for(&self, node_key: usize, sectant: u8) -> Option<usize> {
         let child_key = self.node_children[node_key].child(sectant);

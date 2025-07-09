@@ -1,6 +1,12 @@
 use crate::{boxtree::BOX_NODE_CHILDREN_COUNT, object_pool::ObjectPool};
 use std::{collections::HashMap, error::Error, hash::Hash};
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, de::DeserializeOwned};
+
+#[cfg(feature = "bytecode")]
+use bendy::{decoding::FromBencode, encoding::ToBencode};
+
 /// error types during usage or creation of the boxtree
 #[derive(Debug)]
 pub enum OctreeError {
@@ -80,10 +86,34 @@ pub(crate) enum NodeChildren<T: Default> {
 }
 
 /// Trait for User Defined Voxel Data
-pub trait VoxelData {
+pub trait VoxelData: Default + Eq + Clone + Hash + Send + Sync + 'static + VoxelDataExt {
     /// Determines if the voxel is to be hit by rays in the raytracing algorithms
     fn is_empty(&self) -> bool;
 }
+
+#[cfg(all(feature = "bytecode", feature = "serde"))]
+pub trait VoxelDataExt: FromBencode + ToBencode + Serialize + DeserializeOwned {}
+
+#[cfg(all(feature = "bytecode", not(feature = "serde")))]
+pub trait VoxelDataExt: FromBencode + ToBencode {}
+
+#[cfg(all(not(feature = "bytecode"), feature = "serde"))]
+pub trait VoxelDataExt: Serialize + DeserializeOwned {}
+
+#[cfg(all(not(feature = "bytecode"), not(feature = "serde")))]
+pub trait VoxelDataExt {}
+
+#[cfg(all(feature = "bytecode", feature = "serde"))]
+impl<T> VoxelDataExt for T where T: FromBencode + ToBencode + Serialize + DeserializeOwned {}
+
+#[cfg(all(feature = "bytecode", not(feature = "serde")))]
+impl<T> VoxelDataExt for T where T: FromBencode + ToBencode {}
+
+#[cfg(all(not(feature = "bytecode"), feature = "serde"))]
+impl<T> VoxelDataExt for T where T: Serialize + DeserializeOwned {}
+
+#[cfg(all(not(feature = "bytecode"), not(feature = "serde")))]
+impl<T> VoxelDataExt for T {}
 
 /// Color properties of a voxel
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

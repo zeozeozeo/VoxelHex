@@ -7,7 +7,7 @@ pub use crate::raytracing::bevy::types::{
     BoxTreeGPUHost, BoxTreeGPUView, BoxTreeSpyGlass, RenderBevyPlugin, VhxViewSet, Viewport,
 };
 use crate::{
-    boxtree::{Albedo, UnifiedVoxelData, V3c, VoxelData},
+    boxtree::{Albedo, V3c, VoxelData},
     raytracing::bevy::{
         data::upload_queue::{handle_changes, rebuild},
         pipeline::prepare_bind_groups,
@@ -204,7 +204,7 @@ pub(crate) fn sync_from_main_world(
     }
 }
 
-fn handle_viewport_position_updates<T: UnifiedVoxelData>(
+fn handle_viewport_position_updates<T: VoxelData>(
     mut tree_gpu_host: Option<Res<BoxTreeGPUHost<T>>>,
     mut viewset: Option<ResMut<VhxViewSet>>,
 ) {
@@ -250,7 +250,7 @@ fn handle_viewport_position_updates<T: UnifiedVoxelData>(
     }
 }
 
-impl<T: UnifiedVoxelData> Plugin for RenderBevyPlugin<T> {
+impl<T: VoxelData> Plugin for RenderBevyPlugin<T> {
     fn build(&self, app: &mut App) {
         app.add_plugins((ExtractResourcePlugin::<BoxTreeGPUHost<T>>::default(),));
         app.add_systems(
