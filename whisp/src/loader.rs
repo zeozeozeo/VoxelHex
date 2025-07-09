@@ -1,7 +1,7 @@
-use crate::ui::{components::*, UiState};
+use crate::ui::{UiState, components::*};
 use bevy::{
     prelude::*,
-    tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task},
+    tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future},
 };
 use bevy_lunex::UiColor;
 use bevy_pkv::PkvStore;
