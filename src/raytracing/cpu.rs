@@ -1,6 +1,6 @@
 use crate::{
     boxtree::{
-        BOX_NODE_DIMENSION, BoxTree, BoxTreeEntry, OOB_SECTANT, VoxelData, V3c,
+        BOX_NODE_DIMENSION, BoxTree, BoxTreeEntry, OOB_SECTANT, V3c, VoxelData,
         types::{BrickData, NodeChildren, NodeContent, PaletteIndexValues},
     },
     spatial::{
@@ -244,7 +244,7 @@ impl<T: VoxelData> BoxTree<T> {
         brick: &BrickData<PaletteIndexValues>,
         brick_bounds: &Cube,
         ray_scale_factors: &V3c<f32>,
-    ) -> Option<(BoxTreeEntry<T>, V3c<f32>, V3c<f32>)> {
+    ) -> Option<(BoxTreeEntry<'_, T>, V3c<f32>, V3c<f32>)> {
         match brick {
             BrickData::Empty => {
                 // No need to do anything, iteration continues with "leaf miss"
@@ -297,7 +297,7 @@ impl<T: VoxelData> BoxTree<T> {
 
     /// Provides the collision point of the given ray with the contained voxel field,
     /// Returns a reference of the contained data, collision point and normal at impact, if any
-    pub fn get_by_ray(&self, ray: &Ray) -> Option<(BoxTreeEntry<T>, V3c<f32>, V3c<f32>)> {
+    pub fn get_by_ray(&self, ray: &Ray) -> Option<(BoxTreeEntry<'_, T>, V3c<f32>, V3c<f32>)> {
         // Pre-calculated optimization variables
         let ray_scale_factors = Self::get_dda_scale_factors(ray);
         let direction_lut_index = hash_direction(&ray.direction) as usize;

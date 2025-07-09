@@ -60,7 +60,7 @@ impl NodeConnection {
     }
 
     /// Provides a slice for iteration, if there are children to iterate on
-    pub(crate) fn iter(&self) -> Option<std::slice::Iter<u32>> {
+    pub(crate) fn iter(&self) -> Option<std::slice::Iter<'_, u32>> {
         match &self {
             NodeChildren::Children(c) => Some(c.iter()),
             _ => None,

@@ -225,7 +225,7 @@ impl<T: VoxelData> BoxTree<T> {
 
     /// Getter function for the boxtree
     /// * Returns immutable reference to the data at the given position, if there is any
-    pub fn get(&self, position: &V3c<u32>) -> BoxTreeEntry<T> {
+    pub fn get(&self, position: &V3c<u32>) -> BoxTreeEntry<'_, T> {
         NodeContent::pix_get_ref(
             &self.get_internal(
                 Self::ROOT_NODE_KEY as usize,
@@ -243,7 +243,7 @@ impl<T: VoxelData> BoxTree<T> {
     }
 
     /// Object to set the MIP map strategy for each MIP level inside the boxtree
-    pub fn albedo_mip_map_resampling_strategy(&mut self) -> StrategyUpdater<T> {
+    pub fn albedo_mip_map_resampling_strategy(&mut self) -> StrategyUpdater<'_, T> {
         StrategyUpdater(self)
     }
 

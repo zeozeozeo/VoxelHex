@@ -283,7 +283,7 @@ pub(crate) fn handle_model_load_finished(
             // Extend name with spaces until 40 characters
             let spaces_needed = 40 - model_name_text.len().min(40);
             let spacer = (0..(spaces_needed / 2)).map(|_| " ").collect::<String>();
-            ui_model_name_text.0 = format!("{}{}{}", spacer, model_name_text, spacer);
+            ui_model_name_text.0 = format!("{spacer}{model_name_text}{spacer}");
 
             *message_color = UiColor::from(Color::srgb(0.2, 0.1, 0.25));
 
