@@ -1,8 +1,8 @@
 use crate::{
     boxtree::{
-        BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION, BrickData, V3c,
+        BOX_NODE_CHILDREN_COUNT, BOX_NODE_DIMENSION, BrickData, V3c, VoxelData,
         types::{
-            Albedo, BoxTree, NodeChildren, NodeContent, PaletteIndexValues, VoxelData, VoxelDataExt,
+            Albedo, BoxTree, NodeChildren, NodeContent, PaletteIndexValues, SerializableVoxelData,
         },
     },
     object_pool::empty_marker,
@@ -14,7 +14,9 @@ use std::{
     ops::{Add, Div},
 };
 
-impl<T: VoxelDataExt + Zero + Default + Eq + Clone + Hash + Send + Sync + 'static> VoxelData for T {
+impl<T: SerializableVoxelData + Zero + Default + Eq + Clone + Hash + Send + Sync + 'static>
+    VoxelData for T
+{
     fn is_empty(&self) -> bool {
         *self == T::zero()
     }

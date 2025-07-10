@@ -80,22 +80,24 @@ pub(crate) enum NodeChildren<T: Default> {
 }
 
 /// Trait for User Defined Voxel Data
-pub trait VoxelData: Default + Eq + Clone + Hash + Send + Sync + 'static + VoxelDataExt {
+pub trait VoxelData:
+    Default + Eq + Clone + Hash + Send + Sync + 'static + SerializableVoxelData
+{
     /// Determines if the voxel is to be hit by rays in the raytracing algorithms
     fn is_empty(&self) -> bool;
 }
 
 #[cfg(feature = "bytecode")]
-pub trait VoxelDataExt: FromBencode + ToBencode {}
+pub trait SerializableVoxelData: FromBencode + ToBencode {}
 
 #[cfg(not(feature = "bytecode"))]
-pub trait VoxelDataExt {}
+pub trait SerializableVoxelData {}
 
 #[cfg(feature = "bytecode")]
-impl<T> VoxelDataExt for T where T: FromBencode + ToBencode {}
+impl<T> SerializableVoxelData for T where T: FromBencode + ToBencode {}
 
 #[cfg(not(feature = "bytecode"))]
-impl<T> VoxelDataExt for T {}
+impl<T> SerializableVoxelData for T {}
 
 /// Color properties of a voxel
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
