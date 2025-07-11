@@ -883,6 +883,9 @@ struct Viewport {
     direction: vec3f,
     frustum: vec3f,
     fov: f32,
+    view_matrix: mat4x4<f32>,
+    projection_matrix: mat4x4<f32>,
+    inverse_view_projection_matrix: mat4x4<f32>,
 }
 
 struct RenderStageData {
@@ -925,31 +928,21 @@ var<storage, read> color_palette: array<vec4f>;
 
 @compute @workgroup_size(8, 8, 1)
 fn update(@builtin(global_invocation_id) invocation_id: vec3<u32>) {
-    // calculate NDC from pixel coordinates
+    // Calculate NDC coordinates from pixel coordinates
     let ndc_x = (f32(invocation_id.x) + 0.5) / f32(stage_data.output_resolution.x) * 2.0 - 1.0;
-    let ndc_y = (f32(invocation_id.y) + 0.5) / f32(stage_data.output_resolution.y) * 2.0 - 1.0;
+    let ndc_y = -((f32(invocation_id.y) + 0.5) / f32(stage_data.output_resolution.y) * 2.0 - 1.0);
     
-    let aspect_ratio = f32(stage_data.output_resolution.x) / f32(stage_data.output_resolution.y);
-    let tan_half_fov = tan(radians(viewport.fov) * 0.5);
+    let ndc_near = vec4f(ndc_x, ndc_y, -1.0, 1.0); // near plane in NDC
+    let ndc_far = vec4f(ndc_x, ndc_y, 1.0, 1.0); // far plane in NDC
     
-    // calculate the coordinate system for the camera
-    let camera_forward = normalize(viewport.direction);
-    let camera_right = normalize(cross(camera_forward, vec3f(0.0, 1.0, 0.0)));
-    let camera_up = normalize(cross(camera_right, camera_forward));
+    // Transform NDC coordinates to world space
+    let world_near = viewport.inverse_view_projection_matrix * ndc_near;
+    let world_far = viewport.inverse_view_projection_matrix * ndc_far;
     
-    // project ray direction from camera space
-    let ray_dir_camera = normalize(vec3f(
-        -ndc_x * aspect_ratio * tan_half_fov,
-        -ndc_y * tan_half_fov,
-        1.0
-    ));
+    let world_near_pos = world_near.xyz / world_near.w;
+    let world_far_pos = world_far.xyz / world_far.w;
     
-    // transform ray direction to world space
-    let ray_direction = normalize(
-        ray_dir_camera.x * camera_right +
-        ray_dir_camera.y * camera_up +
-        ray_dir_camera.z * camera_forward
-    );
+    let ray_direction = normalize(world_far_pos - world_near_pos);
     
     var ray = Line(viewport.origin, ray_direction);
     if stage_data.stage == VHX_PREPASS_STAGE_ID {
