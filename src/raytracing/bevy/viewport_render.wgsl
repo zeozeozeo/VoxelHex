@@ -928,7 +928,7 @@ var<storage, read> color_palette: array<vec4f>;
 
 @compute @workgroup_size(8, 8, 1)
 fn update(@builtin(global_invocation_id) invocation_id: vec3<u32>) {
-    // Calculate NDC coordinates from pixel coordinates
+    // Calculate NDC (Normalized Device Coordinates) from pixel coordinates
     let ndc_x = (f32(invocation_id.x) + 0.5) / f32(stage_data.output_resolution.x) * 2.0 - 1.0;
     let ndc_y = -((f32(invocation_id.y) + 0.5) / f32(stage_data.output_resolution.y) * 2.0 - 1.0);
     
