@@ -205,7 +205,7 @@ impl Viewport {
 
     /// Updates the view and projection matrices based on current viewport parameters
     pub fn update_matrices(&mut self, resolution: [u32; 2]) {
-        let forward = self.direction.normalized();
+        let forward = self.direction;
         let right = forward.cross(V3c::new(0.0, 1.0, 0.0)).normalized();
         let up = right.cross(forward).normalized();
 
@@ -251,9 +251,9 @@ impl Viewport {
         self.origin = new_origin;
     }
 
-    /// Sets the viewport direction
+    /// Sets the viewport direction. The direction vector will be normalized
     pub fn set_direction(&mut self, direction: V3cf32) {
-        self.direction = direction;
+        self.direction = direction.normalized();
     }
 
     /// Sets the field of view
